@@ -1,6 +1,6 @@
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau')
-game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau')
+local FlyCar = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
+local ESP = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau'))()
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -31,12 +31,32 @@ AimbotGroup:AddToggle('Aimbot', {
     end
 })
 
+AimbotGroup:AddLabel('Aimbot Keybind'):AddKeyPicker('AimbotKeybind', {
+    Default = 'None',
+    NoUI = false,
+    Mode = 'Toggle',
+    Text = 'Aimbot',
+    Callback = function(Value)
+        Toggles.Aimbot:SetValue(Value)
+    end
+})
+
 AimbotGroup:AddToggle('SilentAim', {
     Text = 'Silent Aim',
     Default = false,
     Tooltip = 'Silently redirects your shots toward the target',
     Callback = function(Value)
         print('[SilentAim]', Value)
+    end
+})
+
+AimbotGroup:AddLabel('Silent Aim Keybind'):AddKeyPicker('SilentAimKeybind', {
+    Default = 'None',
+    NoUI = false,
+    Mode = 'Toggle',
+    Text = 'Silent Aim',
+    Callback = function(Value)
+        Toggles.SilentAim:SetValue(Value)
     end
 })
 
@@ -74,13 +94,14 @@ FunGroup:AddToggle('FlyCar', {
     end
 })
 
-FunGroup:AddKeybind('FlyCarKeybind', {
-    Text = 'Fly Car Keybind',
+FunGroup:AddLabel('Fly Car Keybind'):AddKeyPicker('FlyCarKeybind', {
     Default = 'F',
-    Callback = function()
-        local newVal = not Toggles.FlyCar.Value
-        Toggles.FlyCar:SetValue(newVal)
-        FlyCar:SetEnabled(newVal)
+    NoUI = false,
+    Mode = 'Toggle',
+    Text = 'Fly Car',
+    Callback = function(Value)
+        Toggles.FlyCar:SetValue(Value)
+        FlyCar:SetEnabled(Value)
     end
 })
 
@@ -121,40 +142,44 @@ VisualGroup:AddToggle('Esp', {
     Default = false,
     Tooltip = 'Renders ESP overlays on players',
     Callback = function(Value)
-        print('[Esp]', Value)
+        ESP:SetEnabled(Value)
     end
 })
 
-local EspDepbox = VisualGroup:AddDependencyBox()
-
-EspDepbox:AddToggle('Box', {
+VisualGroup:AddToggle('Box', {
     Text = 'Box',
     Default = false,
     Tooltip = 'Draws a box around players',
     Callback = function(Value)
-        print('[Box]', Value)
+        if Toggles.Esp.Value then
+            ESP:SetBox(Value)
+        end
     end
 })
 
-EspDepbox:AddToggle('Names', {
+VisualGroup:AddToggle('Names', {
     Text = 'Names',
     Default = false,
     Tooltip = 'Displays player names above their character',
     Callback = function(Value)
-        print('[Names]', Value)
+        if Toggles.Esp.Value then
+            ESP:SetNames(Value)
+        end
     end
 })
 
-EspDepbox:AddToggle('DistanceEnabled', {
+VisualGroup:AddToggle('DistanceEnabled', {
     Text = 'Distance',
     Default = false,
     Tooltip = 'Enable distance-based ESP filtering',
     Callback = function(Value)
-        print('[DistanceEnabled]', Value)
+        if Toggles.Esp.Value then
+            ESP:SetDistanceEnabled(Value)
+        end
     end
 })
 
-local DistanceDepbox = EspDepbox:AddDependencyBox()
+local DistanceDepbox = VisualGroup:AddDependencyBox()
 
 DistanceDepbox:AddSlider('EspDistance', {
     Text = 'Distance',
@@ -165,7 +190,9 @@ DistanceDepbox:AddSlider('EspDistance', {
     Compact = false,
     Tooltip = 'Max distance to render ESP',
     Callback = function(Value)
-        print('[EspDistance]', Value)
+        if Toggles.Esp.Value then
+            ESP:SetDistance(Value)
+        end
     end
 })
 
@@ -173,16 +200,18 @@ DistanceDepbox:SetupDependencies({
     { Toggles.DistanceEnabled, true }
 })
 
-EspDepbox:AddToggle('GlowCharacter', {
+VisualGroup:AddToggle('GlowCharacter', {
     Text = 'Glow Character',
     Default = false,
     Tooltip = 'Applies a glow effect to player characters',
     Callback = function(Value)
-        print('[GlowCharacter]', Value)
+        if Toggles.Esp.Value then
+            ESP:SetGlow(Value)
+        end
     end
 })
 
-EspDepbox:AddToggle('FullBrightness', {
+VisualGroup:AddToggle('FullBrightness', {
     Text = 'Full Brightness',
     Default = false,
     Tooltip = 'Removes darkness and lighting effects',
@@ -194,10 +223,6 @@ EspDepbox:AddToggle('FullBrightness', {
             game:GetService('Lighting').Brightness = 1
         end
     end
-})
-
-EspDepbox:SetupDependencies({
-    { Toggles.Esp, true }
 })
 
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
@@ -228,6 +253,7 @@ end)
 Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     FlyCar:SetEnabled(false)
+    ESP:SetEnabled(false)
     Library.Unloaded = true
 end)
 
