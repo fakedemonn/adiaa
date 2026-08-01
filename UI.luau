@@ -73,6 +73,16 @@ FunGroup:AddToggle('FlyCar', {
     end
 })
 
+FunGroup:AddKeybind('FlyCarKeybind', {
+    Text = 'Fly Car Keybind',
+    Default = 'F',
+    Callback = function()
+        local newVal = not Toggles.FlyCar.Value
+        Toggles.FlyCar:SetValue(newVal)
+        FlyCar:SetEnabled(newVal)
+    end
+})
+
 FunGroup:AddLabel('WASD move | E up | Q down | RShift boost', true)
 
 FunGroup:AddButton({
@@ -114,7 +124,9 @@ VisualGroup:AddToggle('Esp', {
     end
 })
 
-VisualGroup:AddToggle('Box', {
+local EspDepbox = VisualGroup:AddDependencyBox()
+
+EspDepbox:AddToggle('Box', {
     Text = 'Box',
     Default = false,
     Tooltip = 'Draws a box around players',
@@ -123,7 +135,7 @@ VisualGroup:AddToggle('Box', {
     end
 })
 
-VisualGroup:AddToggle('Names', {
+EspDepbox:AddToggle('Names', {
     Text = 'Names',
     Default = false,
     Tooltip = 'Displays player names above their character',
@@ -132,7 +144,7 @@ VisualGroup:AddToggle('Names', {
     end
 })
 
-VisualGroup:AddToggle('DistanceEnabled', {
+EspDepbox:AddToggle('DistanceEnabled', {
     Text = 'Distance',
     Default = false,
     Tooltip = 'Enable distance-based ESP filtering',
@@ -141,7 +153,7 @@ VisualGroup:AddToggle('DistanceEnabled', {
     end
 })
 
-local DistanceDepbox = VisualGroup:AddDependencyBox()
+local DistanceDepbox = EspDepbox:AddDependencyBox()
 
 DistanceDepbox:AddSlider('EspDistance', {
     Text = 'Distance',
@@ -160,7 +172,7 @@ DistanceDepbox:SetupDependencies({
     { Toggles.DistanceEnabled, true }
 })
 
-VisualGroup:AddToggle('GlowCharacter', {
+EspDepbox:AddToggle('GlowCharacter', {
     Text = 'Glow Character',
     Default = false,
     Tooltip = 'Applies a glow effect to player characters',
@@ -169,7 +181,7 @@ VisualGroup:AddToggle('GlowCharacter', {
     end
 })
 
-VisualGroup:AddToggle('FullBrightness', {
+EspDepbox:AddToggle('FullBrightness', {
     Text = 'Full Brightness',
     Default = false,
     Tooltip = 'Removes darkness and lighting effects',
@@ -181,6 +193,10 @@ VisualGroup:AddToggle('FullBrightness', {
             game:GetService('Lighting').Brightness = 1
         end
     end
+})
+
+EspDepbox:SetupDependencies({
+    { Toggles.Esp, true }
 })
 
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
