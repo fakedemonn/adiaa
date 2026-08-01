@@ -1,6 +1,7 @@
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local FlyCar = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
 local ESP = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau'))()
+local SilentAim = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/SilentAim.luau'))()
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -46,7 +47,7 @@ AimbotGroup:AddToggle('SilentAim', {
     Default = false,
     Tooltip = 'Silently redirects your shots toward the target',
     Callback = function(Value)
-        print('[SilentAim]', Value)
+        SilentAim.SetEnabled(Value)
     end
 })
 
@@ -57,18 +58,19 @@ AimbotGroup:AddLabel('Silent Aim Keybind'):AddKeyPicker('SilentAimKeybind', {
     Text = 'Silent Aim',
     Callback = function(Value)
         Toggles.SilentAim:SetValue(Value)
+        SilentAim.SetEnabled(Value)
     end
 })
 
 AimbotGroup:AddSlider('AimbotFov', {
     Text = 'Fov',
-    Default = 0,
+    Default = 100,
     Min = 0,
     Max = 500,
     Rounding = 0,
     Compact = false,
     Callback = function(Value)
-        print('[AimbotFov]', Value)
+        SilentAim.SetFov(Value)
     end
 })
 
@@ -79,7 +81,7 @@ AimbotGroup:AddDropdown('AimbotBodyPart', {
     Text = 'Choose A Body Part',
     Tooltip = 'Select which body part to aim at',
     Callback = function(Value)
-        print('[AimbotBodyPart]', Value)
+        SilentAim.SetBodyPart(Value)
     end
 })
 
@@ -254,6 +256,7 @@ Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     FlyCar:SetEnabled(false)
     ESP:SetEnabled(false)
+    SilentAim.SetEnabled(false)
     Library.Unloaded = true
 end)
 
