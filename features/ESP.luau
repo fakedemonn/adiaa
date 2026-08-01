@@ -1,21 +1,24 @@
 -- [Context: ESP Module v3 | Glow decoupled from render loop | Corner brackets]
 -- *glow only fires when you flip the toggle. render loop doesn't touch it.*
+-- *fullbright sits on its own Heartbeat — disconnects cleanly on toggle off.*
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
+local Lighting    = game:GetService("Lighting")
 local localPlayer = Players.LocalPlayer
 local camera      = workspace.CurrentCamera
 
 local ESP = {}
 
 -- ── STATE ─────────────────────────────────────────────────────────────────────
-local enabled     = false
-local showBox     = true
-local showNames   = false
-local showDist    = false
-local showGlow    = false   -- OFF by default. render loop never reads this.
-local maxDist     = 5000
-local distFilter  = false
+local enabled        = false
+local showBox        = false
+local showNames      = false
+local showDist       = false
+local showGlow       = false   -- OFF by default. render loop never reads this.
+local showFullBright = false   -- OFF by default. own Heartbeat, own connection.
+local maxDist        = 5000
+local distFilter     = false
 
 local CORNER_LEN  = 0.25
 local THICKNESS   = 1.5
@@ -55,6 +58,73 @@ local function getBB(char)
         W   = w * 2,
         H   = h,
     }
+end
+
+-- ── FULLBRIGHT ────────────────────────────────────────────────────────────────
+-- *fullbright doesn't share a thread with the render loop.
+--  its Heartbeat connection lives here and dies here.*
+
+local fbConnection      = nil   -- RBXScriptConnection or nil
+local effectWatcher     = nil   -- ChildAdded connection
+
+local function nukeEffects()
+    for _, v in ipairs(Lighting:GetChildren()) do
+        if v:IsA("ColorCorrectionEffect")
+        or v:IsA("BloomEffect")
+        or v:IsA("BlurEffect")
+        or v:IsA("SunRaysEffect")
+        or v:IsA("DepthOfFieldEffect")
+        or v:IsA("BlackAndWhiteEffect") then
+            v.Enabled = false
+        end
+    end
+end
+
+local function applyFullBright()
+    nukeEffects()
+
+    -- watch for effects the game adds dynamically and kill them on arrival
+    effectWatcher = Lighting.ChildAdded:Connect(function(child)
+        task.wait()
+        if child:IsA("ColorCorrectionEffect")
+        or child:IsA("BloomEffect")
+        or child:IsA("BlurEffect")
+        or child:IsA("SunRaysEffect")
+        or child:IsA("DepthOfFieldEffect")
+        or child:IsA("BlackAndWhiteEffect") then
+            child.Enabled = false
+        end
+    end)
+
+    -- Heartbeat races the game's night cycle every frame and wins
+    fbConnection = RunService.Heartbeat:Connect(function()
+        Lighting.Brightness           = 2
+        Lighting.ClockTime            = 14
+        Lighting.GeographicLatitude   = 0
+        Lighting.Ambient              = Color3.fromRGB(255, 255, 255)
+        Lighting.OutdoorAmbient       = Color3.fromRGB(255, 255, 255)
+        Lighting.FogEnd               = 1e9
+        Lighting.FogStart             = 1e9
+        Lighting.ExposureCompensation = 1
+    end)
+end
+
+local function removeFullBright()
+    if fbConnection then
+        fbConnection:Disconnect()
+        fbConnection = nil
+    end
+    if effectWatcher then
+        effectWatcher:Disconnect()
+        effectWatcher = nil
+    end
+    -- restore sane defaults so the game doesn't stay noon-locked
+    Lighting.Brightness           = 1
+    Lighting.Ambient              = Color3.fromRGB(127, 127, 127)
+    Lighting.OutdoorAmbient       = Color3.fromRGB(127, 127, 127)
+    Lighting.FogEnd               = 100000
+    Lighting.FogStart             = 0
+    Lighting.ExposureCompensation = 0
 end
 
 -- ── HIGHLIGHT ────────────────────────────────────────────────────────────────
@@ -181,7 +251,7 @@ local function hideCorners(obj)
     obj.BR_H.Visible = false  obj.BR_V.Visible = false
 end
 
--- ── RENDER LOOP — no glow logic here at all ───────────────────────────────────
+-- ── RENDER LOOP — no glow logic, no fullbright logic ─────────────────────────
 RunService.RenderStepped:Connect(function()
     for player, obj in pairs(ESPObjects) do
         if not player or not player.Parent then
@@ -263,10 +333,8 @@ function ESP:SetEnabled(value)
     enabled = value
     if not value then
         for _, obj in pairs(ESPObjects) do hideESP(obj) end
-        -- Kill all highlights when ESP turns off regardless of glow toggle
         removeAllHighlights()
     else
-        -- ESP turned on — only apply glow if the toggle is already on
         if showGlow then applyAllHighlights() end
     end
 end
@@ -291,11 +359,21 @@ end
 function ESP:SetGlow(value)
     -- *glow toggle flipped. apply or strip all highlights right now.*
     showGlow = value
-    if not enabled then return end  -- ESP off — don't touch anything
+    if not enabled then return end
     if value then
         applyAllHighlights()
     else
         removeAllHighlights()
+    end
+end
+
+function ESP:SetFullBright(value)
+    -- *fullbright toggle. connects or disconnects the Heartbeat entirely.*
+    showFullBright = value
+    if value then
+        applyFullBright()
+    else
+        removeFullBright()
     end
 end
 
