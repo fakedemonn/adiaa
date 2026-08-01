@@ -1,5 +1,5 @@
--- [Context: ESP Module | LinoriaLib compatible | Box + Glow + Names + Distance]
--- *module returns a table. SetEnabled and feature flags drive rendering.*
+-- [Context: ESP Module v3 | Glow decoupled from render loop | Corner brackets]
+-- *glow only fires when you flip the toggle. render loop doesn't touch it.*
 
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
@@ -9,18 +9,18 @@ local camera      = workspace.CurrentCamera
 local ESP = {}
 
 -- ── STATE ─────────────────────────────────────────────────────────────────────
-local enabled         = false
-local showBox         = true
-local showNames       = false
-local showDist        = false
-local showGlow        = true
-local maxDist         = 5000
-local distEnabled     = false
+local enabled     = false
+local showBox     = true
+local showNames   = false
+local showDist    = false
+local showGlow    = false   -- OFF by default. render loop never reads this.
+local maxDist     = 5000
+local distFilter  = false
 
--- ── CONFIG ───────────────────────────────────────────────────────────────────
-local BoxThickness = 1
-local DistSize     = 11
-local NameSize     = 13
+local CORNER_LEN  = 0.25
+local THICKNESS   = 1.5
+local DIST_SIZE   = 11
+local NAME_SIZE   = 13
 
 -- ── UTILS ────────────────────────────────────────────────────────────────────
 local function w2s(worldPos)
@@ -52,11 +52,16 @@ local function getBB(char)
         BR  = Vector2.new(rootSP.X + w, botSP.Y),
         Top = topSP,
         Bot = botSP,
+        W   = w * 2,
+        H   = h,
     }
 end
 
 -- ── HIGHLIGHT ────────────────────────────────────────────────────────────────
+-- Glow is ONLY created/removed by SetGlow and SetEnabled.
+-- The render loop never calls createHighlight or removeHighlight.
 local function createHighlight(char)
+    if not char then return end
     local old = char:FindFirstChildOfClass("Highlight")
     if old then old:Destroy() end
     local h               = Instance.new("Highlight")
@@ -67,7 +72,6 @@ local function createHighlight(char)
     h.DepthMode           = Enum.HighlightDepthMode.AlwaysOnTop
     h.Adornee             = char
     h.Parent              = char
-    return h
 end
 
 local function removeHighlight(char)
@@ -76,12 +80,28 @@ local function removeHighlight(char)
     if h then h:Destroy() end
 end
 
+local function removeAllHighlights()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= localPlayer and p.Character then
+            removeHighlight(p.Character)
+        end
+    end
+end
+
+local function applyAllHighlights()
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= localPlayer and p.Character then
+            createHighlight(p.Character)
+        end
+    end
+end
+
 -- ── DRAWING FACTORY ───────────────────────────────────────────────────────────
 local function newLine()
     local d        = Drawing.new("Line")
     d.Visible      = false
     d.Color        = Color3.fromRGB(255, 255, 255)
-    d.Thickness    = BoxThickness
+    d.Thickness    = THICKNESS
     d.Transparency = 1
     return d
 end
@@ -90,7 +110,7 @@ local function newText(size)
     local d        = Drawing.new("Text")
     d.Visible      = false
     d.Color        = Color3.fromRGB(255, 255, 255)
-    d.Size         = size or DistSize
+    d.Size         = size
     d.Outline      = true
     d.OutlineColor = Color3.fromRGB(0, 0, 0)
     d.Font         = Drawing.Fonts.UI
@@ -102,19 +122,22 @@ end
 local ESPObjects = {}
 
 local function createESP(player)
+    -- *no highlight created here. glow is SetGlow's job.*
     ESPObjects[player] = {
-        BoxTop   = newLine(),
-        BoxBot   = newLine(),
-        BoxLeft  = newLine(),
-        BoxRight = newLine(),
-        Distance = newText(DistSize),
-        Name     = newText(NameSize),
+        TL_H = newLine(), TL_V = newLine(),
+        TR_H = newLine(), TR_V = newLine(),
+        BL_H = newLine(), BL_V = newLine(),
+        BR_H = newLine(), BR_V = newLine(),
+        Distance = newText(DIST_SIZE),
+        Name     = newText(NAME_SIZE),
     }
-    local char = player.Character
-    if char and showGlow then createHighlight(char) end
+
+    -- On respawn: re-apply glow only if both flags are live
     player.CharacterAdded:Connect(function(newChar)
         task.wait(0.1)
-        if enabled and showGlow then createHighlight(newChar) end
+        if enabled and showGlow then
+            createHighlight(newChar)
+        end
     end)
 end
 
@@ -130,7 +153,35 @@ local function hideESP(obj)
     for _, d in pairs(obj) do d.Visible = false end
 end
 
--- ── RENDER LOOP ───────────────────────────────────────────────────────────────
+-- ── CORNER BRACKET RENDERER ───────────────────────────────────────────────────
+local function drawCorners(obj, bb)
+    local TL, TR, BL, BR = bb.TL, bb.TR, bb.BL, bb.BR
+    local cw = bb.W * CORNER_LEN
+    local ch = bb.H * CORNER_LEN
+
+    obj.TL_H.From = TL  obj.TL_H.To = Vector2.new(TL.X + cw, TL.Y)
+    obj.TL_V.From = TL  obj.TL_V.To = Vector2.new(TL.X, TL.Y + ch)
+    obj.TR_H.From = TR  obj.TR_H.To = Vector2.new(TR.X - cw, TR.Y)
+    obj.TR_V.From = TR  obj.TR_V.To = Vector2.new(TR.X, TR.Y + ch)
+    obj.BL_H.From = BL  obj.BL_H.To = Vector2.new(BL.X + cw, BL.Y)
+    obj.BL_V.From = BL  obj.BL_V.To = Vector2.new(BL.X, BL.Y - ch)
+    obj.BR_H.From = BR  obj.BR_H.To = Vector2.new(BR.X - cw, BR.Y)
+    obj.BR_V.From = BR  obj.BR_V.To = Vector2.new(BR.X, BR.Y - ch)
+
+    obj.TL_H.Visible = true  obj.TL_V.Visible = true
+    obj.TR_H.Visible = true  obj.TR_V.Visible = true
+    obj.BL_H.Visible = true  obj.BL_V.Visible = true
+    obj.BR_H.Visible = true  obj.BR_V.Visible = true
+end
+
+local function hideCorners(obj)
+    obj.TL_H.Visible = false  obj.TL_V.Visible = false
+    obj.TR_H.Visible = false  obj.TR_V.Visible = false
+    obj.BL_H.Visible = false  obj.BL_V.Visible = false
+    obj.BR_H.Visible = false  obj.BR_V.Visible = false
+end
+
+-- ── RENDER LOOP — no glow logic here at all ───────────────────────────────────
 RunService.RenderStepped:Connect(function()
     for player, obj in pairs(ESPObjects) do
         if not player or not player.Parent then
@@ -156,7 +207,7 @@ RunService.RenderStepped:Connect(function()
 
         local dist = (root.Position - camera.CFrame.Position).Magnitude
 
-        if distEnabled and dist > maxDist then
+        if distFilter and dist > maxDist then
             hideESP(obj)
             continue
         end
@@ -164,27 +215,14 @@ RunService.RenderStepped:Connect(function()
         local bb = getBB(char)
         if not bb then hideESP(obj) continue end
 
-        -- Glow
-        if showGlow then
-            if not char:FindFirstChildOfClass("Highlight") then
-                createHighlight(char)
-            end
-        else
-            removeHighlight(char)
-        end
-
         -- Box
         if showBox then
-            obj.BoxTop.From    = bb.TL  obj.BoxTop.To    = bb.TR  obj.BoxTop.Visible    = true
-            obj.BoxBot.From    = bb.BL  obj.BoxBot.To    = bb.BR  obj.BoxBot.Visible    = true
-            obj.BoxLeft.From   = bb.TL  obj.BoxLeft.To   = bb.BL  obj.BoxLeft.Visible   = true
-            obj.BoxRight.From  = bb.TR  obj.BoxRight.To  = bb.BR  obj.BoxRight.Visible  = true
+            drawCorners(obj, bb)
         else
-            obj.BoxTop.Visible = false obj.BoxBot.Visible  = false
-            obj.BoxLeft.Visible= false obj.BoxRight.Visible= false
+            hideCorners(obj)
         end
 
-        -- Distance
+        -- Distance label
         if showDist then
             obj.Distance.Text     = ("[%d]"):format(math.floor(dist))
             obj.Distance.Position = Vector2.new(
@@ -225,28 +263,39 @@ function ESP:SetEnabled(value)
     enabled = value
     if not value then
         for _, obj in pairs(ESPObjects) do hideESP(obj) end
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p.Character then removeHighlight(p.Character) end
-        end
+        -- Kill all highlights when ESP turns off regardless of glow toggle
+        removeAllHighlights()
+    else
+        -- ESP turned on — only apply glow if the toggle is already on
+        if showGlow then applyAllHighlights() end
     end
 end
 
-function ESP:SetBox(value)         showBox   = value end
-function ESP:SetNames(value)       showNames = value end
-function ESP:SetDistanceEnabled(v) distEnabled = v   end
-function ESP:SetDistance(value)    maxDist   = value end
+function ESP:SetBox(value)
+    showBox = value
+end
+
+function ESP:SetNames(value)
+    showNames = value
+end
+
+function ESP:SetDistanceEnabled(value)
+    showDist   = value
+    distFilter = value
+end
+
+function ESP:SetDistance(value)
+    maxDist = value
+end
 
 function ESP:SetGlow(value)
+    -- *glow toggle flipped. apply or strip all highlights right now.*
     showGlow = value
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == localPlayer then continue end
-        local char = p.Character
-        if not char then continue end
-        if value and enabled then
-            createHighlight(char)
-        else
-            removeHighlight(char)
-        end
+    if not enabled then return end  -- ESP off — don't touch anything
+    if value then
+        applyAllHighlights()
+    else
+        removeAllHighlights()
     end
 end
 
