@@ -1,42 +1,49 @@
--- SilentAim.lua
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
-local camera = workspace.CurrentCamera
+local camera      = workspace.CurrentCamera
 
 local enabled  = false
 local fov      = 100
 local bodyPart = "Head"
 
--- FOV circle via Drawing API
-local fovCircle = Drawing.new("Circle")
-fovCircle.Visible   = false
-fovCircle.Radius    = fov
-fovCircle.Color     = Color3.fromRGB(255, 255, 255)
-fovCircle.Thickness = 1
-fovCircle.Filled    = false
-fovCircle.NumSides  = 64
+-- FOV circle
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "FovCircleGui"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = game:GetService("CoreGui")
 
--- update circle pos every frame
+local fovFrame = Instance.new("Frame")
+fovFrame.BackgroundTransparency = 1
+fovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
+fovFrame.Visible = false
+fovFrame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(1, 0)
+uiCorner.Parent = fovFrame
+
+local uiStroke = Instance.new("UIStroke")
+uiStroke.Color = Color3.fromRGB(255, 255, 255)
+uiStroke.Thickness = 1.5
+uiStroke.Parent = fovFrame
+
 RunService.RenderStepped:Connect(function()
-    fovCircle.Position = Vector2.new(
-        camera.ViewportSize.X / 2,
-        camera.ViewportSize.Y / 2
-    )
-    fovCircle.Radius  = fov
-    fovCircle.Visible = enabled
+    fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
+    fovFrame.Visible = enabled
 end)
 
--- map dropdown value to actual part name
 local function getPartName()
-    if bodyPart == "Head"       then return "Head"
+    if bodyPart == "Head"           then return "Head"
     elseif bodyPart == "Upper Body" then return "UpperTorso"
-    elseif bodyPart == "Legs"   then return "LeftFoot"
+    elseif bodyPart == "Legs"       then return "LeftFoot"
     end
     return "Head"
 end
 
--- closest player within fov circle
 local function getTarget()
     local closestPlayer = nil
     local closestDist   = fov
@@ -66,7 +73,8 @@ local function getTarget()
     return closestPlayer
 end
 
--- __namecall hook — intercepts raycast calls and bends them toward target
+-- namecall hook — only touches rays that come from near the player's gun
+-- camera raycasts are filtered out by origin distance + ray length checks
 local mt = getrawmetatable(game)
 setreadonly(mt, false)
 
@@ -75,36 +83,62 @@ mt.__namecall = newcclosure(function(self, ...)
     local method = getnamecallmethod()
     local args   = {...}
 
-    if enabled then
-        if method == "FindPartOnRayWithIgnoreList"
-        or method == "FindPartOnRayWithWhitelist" then
-            local target = getTarget()
-            if target then
-                local char = target.Character
-                local part = char and (
-                    char:FindFirstChild(getPartName())
-                    or char:FindFirstChild("HumanoidRootPart")
-                )
-                if part then
-                    local ray    = args[1]
-                    local origin = ray.Origin
-                    local mag    = ray.Direction.Magnitude
-                    args[1] = Ray.new(origin, (part.Position - origin).Unit * mag)
+    if enabled and self == workspace then
+        if method == "Raycast" then
+            local origin    = args[1]
+            local direction = args[2]
+
+            if origin and direction then
+                local char = localPlayer.Character
+                local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+
+                -- gun rays originate within ~10 studs of the player
+                -- camera clip/occlusion rays are short (<50 studs)
+                -- so: origin near player AND ray is long = gun fire
+                if hrp
+                    and (origin - hrp.Position).Magnitude < 10
+                    and direction.Magnitude > 50 then
+
+                    local target = getTarget()
+                    if target then
+                        local tchar = target.Character
+                        local part  = tchar and (
+                            tchar:FindFirstChild(getPartName())
+                            or tchar:FindFirstChild("HumanoidRootPart")
+                        )
+                        if part then
+                            args[2] = (part.Position - origin).Unit * direction.Magnitude
+                        end
+                    end
                 end
             end
 
-        elseif method == "Raycast" then
-            local target = getTarget()
-            if target then
-                local char = target.Character
-                local part = char and (
-                    char:FindFirstChild(getPartName())
-                    or char:FindFirstChild("HumanoidRootPart")
-                )
-                if part then
-                    local origin = args[1]
-                    local mag    = args[2].Magnitude
-                    args[2] = (part.Position - origin).Unit * mag
+        elseif method == "FindPartOnRayWithIgnoreList"
+            or method == "FindPartOnRayWithWhitelist" then
+
+            local ray = args[1]
+            if ray then
+                local char = localPlayer.Character
+                local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+
+                if hrp
+                    and (ray.Origin - hrp.Position).Magnitude < 10
+                    and ray.Direction.Magnitude > 50 then
+
+                    local target = getTarget()
+                    if target then
+                        local tchar = target.Character
+                        local part  = tchar and (
+                            tchar:FindFirstChild(getPartName())
+                            or tchar:FindFirstChild("HumanoidRootPart")
+                        )
+                        if part then
+                            args[1] = Ray.new(
+                                ray.Origin,
+                                (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
+                            )
+                        end
+                    end
                 end
             end
         end
@@ -115,14 +149,14 @@ end)
 
 setreadonly(mt, true)
 
--- return module so UI.luau can control it
 return {
     SetEnabled = function(val)
         enabled = val
-        fovCircle.Visible = val
+        fovFrame.Visible = val
     end,
     SetFov = function(val)
         fov = val
+        fovFrame.Size = UDim2.new(0, val * 2, 0, val * 2)
     end,
     SetBodyPart = function(val)
         bodyPart = val
