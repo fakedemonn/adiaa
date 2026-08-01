@@ -1,6 +1,5 @@
 local Players     = game:GetService("Players")
 local RunService  = game:GetService("RunService")
-local UIS         = game:GetService("UserInputService")
 local localPlayer = Players.LocalPlayer
 local camera      = workspace.CurrentCamera
 
@@ -45,6 +44,7 @@ local function getPartName()
     return "Head"
 end
 
+-- closest player to crosshair center within fov radius
 local function getTarget()
     local closestPlayer = nil
     local closestDist   = fov
@@ -71,16 +71,15 @@ local function getTarget()
     return closestPlayer
 end
 
--- Hook Mouse.Hit only — zero camera interaction
--- Camera never presses MB1, so this gate keeps it clean
+-- Mouse.Hit hook — always redirects when target is in FOV
+-- never touches camera, only affects where the gun thinks your cursor is
 local mouse = localPlayer:GetMouse()
 local mt    = getrawmetatable(mouse)
 setreadonly(mt, false)
 
 local oldIndex = mt.__index
 mt.__index = newcclosure(function(self, key)
-    if enabled and key == "Hit"
-    and UIS:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+    if enabled and key == "Hit" then
         local target = getTarget()
         if target then
             local char = target.Character
