@@ -8,7 +8,7 @@ local enabled  = false
 local fov      = 100
 local bodyPart = "Head"
 
--- FOV circle follows mouse cursor
+-- FOV circle follows cursor
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FovCircleGui"
 screenGui.ResetOnSpawn = false
@@ -19,7 +19,7 @@ screenGui.Parent = game:GetService("CoreGui")
 local fovFrame = Instance.new("Frame")
 fovFrame.BackgroundTransparency = 1
 fovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+fovFrame.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
 fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
 fovFrame.Visible = false
 fovFrame.Parent = screenGui
@@ -33,13 +33,8 @@ uiStroke.Color = Color3.fromRGB(255, 255, 255)
 uiStroke.Thickness = 1.5
 uiStroke.Parent = fovFrame
 
--- update circle to follow mouse every frame
 RunService.RenderStepped:Connect(function()
-    if not enabled then
-        fovFrame.Visible = false
-        return
-    end
-    fovFrame.Visible = true
+    fovFrame.Visible = enabled
     fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
     fovFrame.Position = UDim2.new(0, mouse.X, 0, mouse.Y)
 end)
@@ -52,12 +47,12 @@ local function getPartName()
     return "Head"
 end
 
--- only real players, no NPCs
-local function isRealPlayer(character)
-    return Players:GetPlayerFromCharacter(character) ~= nil
+-- players only, no NPCs
+local function isRealPlayer(char)
+    return Players:GetPlayerFromCharacter(char) ~= nil
 end
 
--- closest player to mouse cursor within fov radius
+-- closest real player to mouse cursor within fov radius
 local function getTarget()
     local closestPlayer = nil
     local closestDist   = fov
@@ -66,8 +61,7 @@ local function getTarget()
     for _, player in ipairs(Players:GetPlayers()) do
         if player == localPlayer then continue end
         local char = player.Character
-        if not char then continue end
-        if not isRealPlayer(char) then continue end
+        if not char or not isRealPlayer(char) then continue end
         local hum = char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then continue end
 
@@ -80,7 +74,7 @@ local function getTarget()
 
         local dist = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude
         if dist < closestDist then
-            closestDist   = dist
+            closestDist = dist
             closestPlayer = player
         end
     end
@@ -88,31 +82,43 @@ local function getTarget()
     return closestPlayer
 end
 
--- hook Mouse.Hit — gun reads this to know where to shoot
--- camera doesn't use Mouse.Hit so camera movement is untouched
-local mt = getrawmetatable(mouse)
+-- hook workspace:Raycast — this is what the gun actually uses
+-- filter: origin must be near HRP (gun fire) AND magnitude > 10 (not a short physics check)
+local mt = getrawmetatable(workspace)
 setreadonly(mt, false)
 
-local oldIndex = mt.__index
-mt.__index = newcclosure(function(self, key)
-    if enabled and key == "Hit" then
-        local target = getTarget()
-        if target then
-            local char = target.Character
-            local part = char and (
-                char:FindFirstChild(getPartName())
-                or char:FindFirstChild("HumanoidRootPart")
-            )
-            if part then
-                return CFrame.new(part.Position)
+local oldNamecall = mt.__namecall
+mt.__namecall = newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    local args   = {...}
+
+    if enabled and method == "Raycast" and self == workspace then
+        local origin = args[1]
+        local dir    = args[2]
+
+        if origin and dir and dir.Magnitude > 10 then
+            local char = localPlayer.Character
+            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+
+            -- only intercept rays that originate near our player (gun shots)
+            if hrp and (origin - hrp.Position).Magnitude < 15 then
+                local target = getTarget()
+                if target then
+                    local tchar = target.Character
+                    local part  = tchar and (
+                        tchar:FindFirstChild(getPartName())
+                        or tchar:FindFirstChild("HumanoidRootPart")
+                    )
+                    if part then
+                        -- keep same magnitude, just change direction
+                        args[2] = (part.Position - origin).Unit * dir.Magnitude
+                    end
+                end
             end
         end
     end
 
-    if type(oldIndex) == "function" then
-        return oldIndex(self, key)
-    end
-    return oldIndex[key]
+    return oldNamecall(self, table.unpack(args))
 end)
 
 setreadonly(mt, true)
