@@ -8,6 +8,7 @@ local InfMag       = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
 local InfAmmo      = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
 local NoRecoil     = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
 local RapidShoot   = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
+local BuyWeapons = loadstring(game:HttpGet(featRepo .. 'BuyWeapons.luau'))()
 
 -- ─── LinoriaLib ───────────────────────────────────────────────────────────────
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
