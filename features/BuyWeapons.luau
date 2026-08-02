@@ -1,11 +1,18 @@
 local BuyWeapons = {}
 BuyWeapons.__index = BuyWeapons
 
-local Players = game:GetService("Players")
-
 function BuyWeapons:_scan()
     self._catalog = {}
-    local shop = workspace.Map.Nature.Structures.ValsToolsAndWeapons
+    -- wait for shop to exist before scanning
+    local map      = workspace:WaitForChild("Map", 15)
+    if not map then return end
+    local nature   = map:WaitForChild("Nature", 10)
+    if not nature then return end
+    local structs  = nature:WaitForChild("Structures", 10)
+    if not structs then return end
+    local shop     = structs:WaitForChild("ValsToolsAndWeapons", 10)
+    if not shop then return end
+
     for _, obj in ipairs(shop:GetDescendants()) do
         if obj:IsA("ProximityPrompt") and obj.ObjectText ~= "" then
             local price = tonumber(obj.ActionText:match("%((%d+)%)")) or 0
@@ -43,15 +50,8 @@ end
 
 function BuyWeapons:BuyAll()
     for name in pairs(self._catalog) do
-        local ok, err = self:Buy(name)
-        print(ok and ("[BUY] " .. name) or ("[FAIL] " .. name .. ": " .. err))
+        self:Buy(name)
         task.wait(0.3)
-    end
-end
-
-function BuyWeapons:PrintCatalog()
-    for _, item in ipairs(self:GetCatalog()) do
-        print(string.format("$%d — %s", item.price, item.name))
     end
 end
 
