@@ -1,4 +1,4 @@
--- Silent Aim – No UI, No Keybind – Just the core logic
+-- Silent Aim – Direct Roblox part names from UI
 local Players = game:GetService("Players")
 local localPlayer = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -6,30 +6,30 @@ local mouse = localPlayer:GetMouse()
 
 local enabled = false
 local fov = 150
-local bodyPart = "Head" -- "Head", "UpperBody", "Legs"
+local bodyPart = "Head"  -- "Head", "UpperTorso", or "LowerTorso"
 
-local function getPartName()
-    if bodyPart == "Head" then return "Head"
-    elseif bodyPart == "UpperBody" then return "UpperTorso"
-    elseif bodyPart == "Legs" then return "LowerTorso"
-    end
-    return "Head"
-end
-
+-- Get the target part from character
 local function getTargetPart(char)
-    local part = char:FindFirstChild(getPartName())
+    -- Try the exact bodyPart name first
+    local part = char:FindFirstChild(bodyPart)
     if part then return part end
-    if bodyPart == "Legs" then
+    
+    -- Fallback: if UpperTorso missing, try HumanoidRootPart
+    if bodyPart == "UpperTorso" then
         part = char:FindFirstChild("HumanoidRootPart")
         if part then return part end
     end
+    
+    -- Ultimate fallback: HumanoidRootPart or Head
     return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
 end
 
+-- Check if character belongs to a real player
 local function isRealPlayer(char)
     return Players:GetPlayerFromCharacter(char) ~= nil
 end
 
+-- Find the closest valid target within FOV
 local function getTarget()
     local closestPlayer = nil
     local closestDist = fov
@@ -58,7 +58,7 @@ local function getTarget()
     return closestPlayer
 end
 
--- Hook workspace.Raycast
+-- Hook workspace.Raycast to redirect shots
 local mt = getrawmetatable(workspace)
 setreadonly(mt, false)
 local oldNamecall = mt.__namecall
@@ -92,11 +92,11 @@ end
 
 setreadonly(mt, true)
 
--- Exported API
+-- Exported API for UI
 return {
     SetEnabled = function(val) enabled = val end,
     SetFov = function(val) fov = val end,
-    SetBodyPart = function(val) bodyPart = val end,
+    SetBodyPart = function(val) bodyPart = val end,  -- val is "Head", "UpperTorso", or "LowerTorso"
     GetEnabled = function() return enabled end,
     GetFov = function() return fov end,
     GetBodyPart = function() return bodyPart end,
