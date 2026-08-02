@@ -42,7 +42,7 @@ AimbotGroup:AddLabel('Aimbot Keybind'):AddKeyPicker('AimbotKeybind', {
 })
 
 AimbotGroup:AddDropdown('AimbotBodyPart', {
-    Values = { 'Head', 'Upper Body', 'Legs' },
+    Values = { 'Head', 'Torso' },
     Default = 1,
     Multi = false,
     Text = 'Choose A Body Part',
