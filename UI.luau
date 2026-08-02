@@ -1,7 +1,6 @@
 local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local FlyCar = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
 local ESP = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau'))()
-local SilentAim = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/SilentAim.luau'))()
 
 local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -42,47 +41,14 @@ AimbotGroup:AddLabel('Aimbot Keybind'):AddKeyPicker('AimbotKeybind', {
     end
 })
 
-AimbotGroup:AddToggle('SilentAim', {
-    Text = 'Silent Aim',
-    Default = false,
-    Tooltip = 'Silently redirects your shots toward the target',
-    Callback = function(Value)
-        SilentAim.SetEnabled(Value)
-    end
-})
-
-AimbotGroup:AddLabel('Silent Aim Keybind'):AddKeyPicker('SilentAimKeybind', {
-    Default = 'None',
-    NoUI = false,
-    Mode = 'Toggle',
-    Text = 'Silent Aim',
-    Callback = function(Value)
-        Toggles.SilentAim:SetValue(Value)
-        SilentAim.SetEnabled(Value)
-    end
-})
-
-AimbotGroup:AddSlider('AimbotFov', {
-    Text = 'Fov',
-    Default = 100,
-    Min = 0,
-    Max = 500,
-    Rounding = 0,
-    Compact = false,
-    Callback = function(Value)
-        SilentAim.SetFov(Value)
-    end
-})
-
--- ===== UPDATED DROPDOWN – exact Roblox part names =====
 AimbotGroup:AddDropdown('AimbotBodyPart', {
-    Values = { 'Head', 'UpperTorso', 'LowerTorso' },   -- changed to Roblox names
+    Values = { 'Head', 'Upper Body', 'Legs' },
     Default = 1,
     Multi = false,
     Text = 'Choose A Body Part',
     Tooltip = 'Select which body part to aim at',
     Callback = function(Value)
-        SilentAim.SetBodyPart(Value)
+        print('[AimbotBodyPart]', Value)
     end
 })
 
@@ -257,7 +223,6 @@ Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     FlyCar:SetEnabled(false)
     ESP:SetEnabled(false)
-    SilentAim.SetEnabled(false)
     Library.Unloaded = true
 end)
 
