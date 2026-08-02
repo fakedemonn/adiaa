@@ -74,8 +74,9 @@ AimbotGroup:AddSlider('AimbotFov', {
     end
 })
 
+-- ===== UPDATED DROPDOWN – exact Roblox part names =====
 AimbotGroup:AddDropdown('AimbotBodyPart', {
-    Values = { 'Head', 'Upper Body', 'Legs' },
+    Values = { 'Head', 'UpperTorso', 'LowerTorso' },   -- changed to Roblox names
     Default = 1,
     Multi = false,
     Text = 'Choose A Body Part',
