@@ -35,7 +35,6 @@ uiStroke.Parent = fovFrame
 RunService.RenderStepped:Connect(function()
     fovFrame.Visible = enabled
     fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
-    -- circle stays at screen center where gun actually shoots
     fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 end)
 
@@ -52,7 +51,6 @@ local function isRealPlayer(char)
     return Players:GetPlayerFromCharacter(char) ~= nil
 end
 
--- target closest to screen center within fov
 local function getTarget()
     local closestPlayer = nil
     local closestDist   = fov
@@ -91,11 +89,14 @@ mt.__namecall = newcclosure(function(self, ...)
         local origin = args[1]
         local dir    = args[2]
 
-        if origin and dir and dir.Magnitude > 10 then
-            local char = localPlayer.Character
-            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
+        if origin and dir and dir.Magnitude > 20 then
+            -- check if ray is roughly going same direction as camera look
+            -- dot product > 0.7 means within ~45 degrees of where camera faces
+            local camLook = camera.CFrame.LookVector
+            local dirUnit = dir.Unit
+            local dot = camLook:Dot(dirUnit)
 
-            if hrp and (origin - hrp.Position).Magnitude < 15 then
+            if dot > 0.7 then
                 local target = getTarget()
                 if target then
                     local tchar = target.Character
