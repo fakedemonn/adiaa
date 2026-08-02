@@ -1,4 +1,4 @@
--- Silent Aim with FOV circle – fixed raycast hook
+-- Silent Aim with guaranteed FOV circle
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
@@ -10,43 +10,58 @@ local enabled = false
 local fov = 150
 local bodyPart = "Head"  -- "Head", "UpperTorso", "LowerTorso"
 
--- ===== FOV CIRCLE (screen center) =====
+-- ===== FOV CIRCLE (reliable border frame) =====
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "FovCircle"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 screenGui.Parent = game:GetService("CoreGui")
 
-local fovFrame = Instance.new("Frame")
-fovFrame.BackgroundTransparency = 1
-fovFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)  -- center
-fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
-fovFrame.Visible = false
-fovFrame.Parent = screenGui
+-- Outer frame (transparent, just for positioning and corner)
+local outerFrame = Instance.new("Frame")
+outerFrame.BackgroundTransparency = 1
+outerFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+outerFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+outerFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
+outerFrame.Visible = false
+outerFrame.Parent = screenGui
 
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(1, 0)  -- circle
-uiCorner.Parent = fovFrame
+-- Corner radius makes it a circle
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(1, 0)
+corner.Parent = outerFrame
 
-local uiStroke = Instance.new("UIStroke")
-uiStroke.Color = Color3.fromRGB(0, 255, 0)
-uiStroke.Thickness = 1.5
-uiStroke.Parent = fovFrame
+-- Inner border frame (colored, slightly smaller)
+local borderFrame = Instance.new("Frame")
+borderFrame.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+borderFrame.BackgroundTransparency = 0.8  -- semi-transparent green
+borderFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+borderFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+borderFrame.Size = UDim2.new(0, fov * 2 - 4, 0, fov * 2 - 4)  -- 4px border
+borderFrame.BorderSizePixel = 0  -- no border, uses itself as the ring
+borderFrame.Parent = outerFrame
 
--- Update circle size and visibility every frame
+-- Corner for the border too
+local borderCorner = Instance.new("UICorner")
+borderCorner.CornerRadius = UDim.new(1, 0)
+borderCorner.Parent = borderFrame
+
+-- Update circle size and visibility
 RunService.RenderStepped:Connect(function()
-    fovFrame.Visible = enabled
-    fovFrame.Size = UDim2.new(0, fov * 2, 0, fov * 2)
+    outerFrame.Visible = enabled
+    local size = fov * 2
+    outerFrame.Size = UDim2.new(0, size, 0, size)
+    borderFrame.Size = UDim2.new(0, size - 4, 0, size - 4)
     -- keep centered
-    fovFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    outerFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+    borderFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 end)
 
 -- ===== TARGET ACQUISITION =====
 local function getTargetPart(char)
     local part = char:FindFirstChild(bodyPart)
     if part then return part end
-    -- Fallback: if bodyPart is missing, try HumanoidRootPart
     return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Head")
 end
 
@@ -95,24 +110,21 @@ mt.__namecall = function(self, ...)
         local origin = args[1]
         local direction = args[2]
 
-        -- Only intercept if we have valid vectors
         if origin and direction and typeof(origin) == "Vector3" and typeof(direction) == "Vector3" then
             local char = localPlayer.Character
             if char then
-                -- Check if this ray likely comes from a weapon (origin near any part of our character)
-                -- Instead of a hard distance limit, we check if the origin is within 50 studs of any character part.
-                -- This covers tools, guns, and the character itself.
+                -- Check if origin is near any part of the player (weapon/handle)
                 local isFromPlayer = false
-                for _, part in ipairs(char:GetDescendants()) do
-                    if part:IsA("BasePart") and (origin - part.Position).Magnitude < 30 then
-                        isFromPlayer = true
-                        break
-                    end
-                end
-                -- Also allow if origin is near HumanoidRootPart (for simpler games)
                 local hrp = char:FindFirstChild("HumanoidRootPart")
                 if hrp and (origin - hrp.Position).Magnitude < 30 then
                     isFromPlayer = true
+                else
+                    for _, part in ipairs(char:GetDescendants()) do
+                        if part:IsA("BasePart") and (origin - part.Position).Magnitude < 30 then
+                            isFromPlayer = true
+                            break
+                        end
+                    end
                 end
 
                 if isFromPlayer then
@@ -121,9 +133,7 @@ mt.__namecall = function(self, ...)
                         local tchar = target.Character
                         local targetPart = tchar and getTargetPart(tchar)
                         if targetPart then
-                            -- Redefine direction: aim at the target part
-                            local newDir = (targetPart.Position - origin).Unit * direction.Magnitude
-                            args[2] = newDir
+                            args[2] = (targetPart.Position - origin).Unit * direction.Magnitude
                         end
                     end
                 end
@@ -131,7 +141,6 @@ mt.__namecall = function(self, ...)
         end
     end
 
-    -- Call original with (possibly modified) args
     return oldNamecall(self, table.unpack(args))
 end
 
@@ -141,13 +150,16 @@ setreadonly(mt, true)
 return {
     SetEnabled = function(val)
         enabled = val
-        fovFrame.Visible = val
+        outerFrame.Visible = val
+        print("[Silent Aim] Enabled:", val)
     end,
     SetFov = function(val)
         fov = val
+        print("[Silent Aim] FOV set to:", val)
     end,
     SetBodyPart = function(val)
         bodyPart = val
+        print("[Silent Aim] Body part set to:", val)
     end,
     GetEnabled = function() return enabled end,
     GetFov = function() return fov end,
