@@ -4,16 +4,22 @@ local featRepo = 'https://raw.githubusercontent.com/fakedemonn/thiswasapracticeh
 -- ─── Feature modules ──────────────────────────────────────────────────────────
 local FlyCar       = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
 local ESP          = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau'))()
+local BuyWeapons = loadstring(game:HttpGet(featRepo .. 'BuyWeapons.luau'))()
 local InfMag       = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
 local InfAmmo      = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
 local NoRecoil     = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
 local RapidShoot   = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
-local BuyWeapons = loadstring(game:HttpGet(featRepo .. 'BuyWeapons.luau'))()
 
 -- ─── LinoriaLib ───────────────────────────────────────────────────────────────
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+
+-- ─── Services / ATM remote (confirmed works without proximity) ─────────────────
+local Players  = game:GetService('Players')
+local RS       = game:GetService('ReplicatedStorage')
+local ATMEvent = RS:WaitForChild('ATMEvent')
+local plr      = Players.LocalPlayer
 
 -- ─── Window ───────────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
@@ -33,7 +39,6 @@ local Tabs = {
 -- ─── MISCELLANEOUS (left) ─────────────────────────────────────────────────────
 local MiscGroup = Tabs.Main:AddLeftGroupbox('Miscellaneous')
 
--- Aimbot
 MiscGroup:AddToggle('Aimbot', {
     Text    = 'Aimbot',
     Default = false,
@@ -64,7 +69,6 @@ MiscGroup:AddDropdown('AimbotBodyPart', {
 
 MiscGroup:AddDivider()
 
--- Inf Mag
 MiscGroup:AddToggle('InfMag', {
     Text    = 'Inf Mag',
     Default = false,
@@ -74,7 +78,6 @@ MiscGroup:AddToggle('InfMag', {
     end
 })
 
--- Inf Ammo Reserves
 MiscGroup:AddToggle('InfAmmo', {
     Text    = 'Inf Ammo Reserves',
     Default = false,
@@ -84,7 +87,6 @@ MiscGroup:AddToggle('InfAmmo', {
     end
 })
 
--- No Recoil
 MiscGroup:AddToggle('NoRecoil', {
     Text    = 'No Recoil',
     Default = false,
@@ -94,7 +96,6 @@ MiscGroup:AddToggle('NoRecoil', {
     end
 })
 
--- Rapid Shoot
 MiscGroup:AddToggle('RapidShoot', {
     Text    = 'Rapid Shoot',
     Default = false,
@@ -107,7 +108,6 @@ MiscGroup:AddToggle('RapidShoot', {
 -- ─── FUN (right) ──────────────────────────────────────────────────────────────
 local FunGroup = Tabs.Main:AddRightGroupbox('Fun')
 
--- Fly Car — keybind chained directly onto the toggle, no separate label row
 FunGroup:AddToggle('FlyCar', {
     Text    = 'Fly Car',
     Default = false,
@@ -131,7 +131,7 @@ FunGroup:AddLabel('WASD move | E up | Q down | RShift boost', true)
 FunGroup:AddButton({
     Text = 'Teleport to Car',
     Func = function()
-        local char = game:GetService('Players').LocalPlayer.Character
+        local char = plr.Character
         local hrp  = char and char:FindFirstChild('HumanoidRootPart')
         if not hrp then return end
 
@@ -152,12 +152,94 @@ FunGroup:AddButton({
 FunGroup:AddButton({
     Text = 'Respawn',
     Func = function()
-        game:GetService('Players').LocalPlayer.Character
-            :FindFirstChildOfClass('Humanoid').Health = 0
+        plr.Character:FindFirstChildOfClass('Humanoid').Health = 0
     end,
     DoubleClick = false,
     Tooltip     = 'Respawns your character'
 })
+
+-- ─── ATM ANYWHERE (right, below Fun) ─────────────────────────────────────────
+-- FireServer directly — no proximity check required, confirmed from recon.
+-- Signature: ATMEvent:FireServer(amount: number, action: "deposit"|"withdraw")
+-- Server validates amount against real balance, so entries above balance are rejected silently.
+
+local AtmGroup = Tabs.Main:AddRightGroupbox('ATM')
+
+-- Live balance display — updated on load and after every action
+local function getWallet()
+    local ls = plr:FindFirstChild('leaderstats')
+    return ls and ls:FindFirstChild('Cash') and ls.Cash.Value or 0
+end
+
+local function getBank()
+    local bd = plr:FindFirstChild('BankData')
+    return bd and bd:FindFirstChild('DepositedValue') and bd.DepositedValue.Value or 0
+end
+
+local WalletLabel = AtmGroup:AddLabel(('Wallet: $%d'):format(getWallet()))
+local BankLabel   = AtmGroup:AddLabel(('Bank:   $%d'):format(getBank()))
+
+local function refreshBalances()
+    WalletLabel:SetText(('Wallet: $%d'):format(getWallet()))
+    BankLabel:SetText(('Bank:   $%d'):format(getBank()))
+end
+
+-- Amount input — numeric only, fires on every keystroke so the value is always fresh
+AtmGroup:AddInput('AtmAmount', {
+    Default     = '1000',
+    Numeric     = true,
+    Finished    = false,
+    Text        = 'Amount',
+    Tooltip     = 'How much to deposit or withdraw',
+    Placeholder = 'Enter amount...',
+})
+
+AtmGroup:AddDivider()
+
+-- Withdraw button
+AtmGroup:AddButton({
+    Text = 'Withdraw',
+    Func = function()
+        local amount = tonumber(Options.AtmAmount.Value)
+        if not amount or amount <= 0 then
+            Library:Notify('Enter a valid amount first.', 3)
+            return
+        end
+        ATMEvent:FireServer(amount, 'withdraw')
+        task.wait(0.4)   -- give the server one tick to update the value
+        refreshBalances()
+        Library:Notify(('Withdrew $%d'):format(amount), 3)
+    end,
+    DoubleClick = false,
+    Tooltip     = 'Withdraw from bank to wallet — must have the funds in bank'
+})
+
+-- Deposit button
+AtmGroup:AddButton({
+    Text = 'Deposit',
+    Func = function()
+        local amount = tonumber(Options.AtmAmount.Value)
+        if not amount or amount <= 0 then
+            Library:Notify('Enter a valid amount first.', 3)
+            return
+        end
+        ATMEvent:FireServer(amount, 'deposit')
+        task.wait(0.4)
+        refreshBalances()
+        Library:Notify(('Deposited $%d'):format(amount), 3)
+    end,
+    DoubleClick = false,
+    Tooltip     = 'Deposit from wallet to bank — must have the funds in wallet'
+})
+
+-- Refresh balance display every 3 seconds passively
+-- (leaderstats.Cash can change from in-game events, keeps label honest)
+local AtmRefreshConnection = game:GetService('RunService').Heartbeat:Connect(function()
+    if Library.Unloaded then return end
+    if (tick() % 3) < 0.016 then
+        refreshBalances()
+    end
+end)
 
 -- ─── VISUAL TAB ───────────────────────────────────────────────────────────────
 local VisualGroup = Tabs.Visual:AddLeftGroupbox('Visualization')
@@ -271,6 +353,7 @@ end)
 -- ─── Unload cleanup ───────────────────────────────────────────────────────────
 Library:OnUnload(function()
     WatermarkConnection:Disconnect()
+    AtmRefreshConnection:Disconnect()
     FlyCar:SetEnabled(false)
     ESP:SetEnabled(false)
     InfMag:SetEnabled(false)
