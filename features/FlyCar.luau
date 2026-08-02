@@ -166,7 +166,7 @@ function FlyCar:SetEnabled(value)
     if value then
         local root, v = getVehicle()
         if not root then
-            warn("[FlyCar] Get in a car first")
+            warn("get in the car dude")
             return
         end
         yaw    = math.atan2(-root.CFrame.LookVector.X, -root.CFrame.LookVector.Z)
