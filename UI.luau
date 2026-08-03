@@ -3,8 +3,10 @@ local featRepo = 'https://raw.githubusercontent.com/fakedemonn/thiswasapracticeh
 
 -- ─── Feature modules ──────────────────────────────────────────────────────────
 local FlyCar       = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
-local ESP          = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/ESP.luau'))()
-local BuyWeapons = loadstring(game:HttpGet(featRepo .. 'BuyWeapons.luau'))()
+local EspBox       = loadstring(game:HttpGet(featRepo .. 'esp_box.luau'))()
+local EspNames     = loadstring(game:HttpGet(featRepo .. 'esp_names.luau'))()
+local EspDistance  = loadstring(game:HttpGet(featRepo .. 'esp_distance.luau'))()
+local EspGlow      = loadstring(game:HttpGet(featRepo .. 'esp_glow.luau'))()
 local InfMag       = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
 local InfAmmo      = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
 local NoRecoil     = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
@@ -244,70 +246,90 @@ end)
 -- ─── VISUAL TAB ───────────────────────────────────────────────────────────────
 local VisualGroup = Tabs.Visual:AddLeftGroupbox('Visualization')
 
+-- Master ESP toggle — nothing below activates unless this is ON
 VisualGroup:AddToggle('Esp', {
     Text    = 'ESP',
     Default = false,
-    Tooltip = 'Renders ESP overlays on players',
+    Tooltip = 'Master switch — all ESP features require this ON',
     Callback = function(Value)
-        ESP:SetEnabled(Value)
+        -- sub-features already gated by their own dependency box,
+        -- but re-push their current toggle state so they respond immediately
+        EspBox:SetEnabled(Value and Toggles.Box.Value)
+        EspNames:SetEnabled(Value and Toggles.Names.Value)
+        EspDistance:SetEnabled(Value and Toggles.DistanceEnabled.Value)
+        EspGlow:SetEnabled(Value and Toggles.GlowCharacter.Value)
     end
 })
 
-VisualGroup:AddToggle('Box', {
+-- DepBox A — grayed out and non-functional while ESP is OFF
+local EspDepBox = VisualGroup:AddDependencyBox()
+
+EspDepBox:AddToggle('Box', {
     Text    = 'Box',
     Default = false,
-    Tooltip = 'Draws a box around players',
+    Tooltip = 'Draws a 2D bounding box around each player',
     Callback = function(Value)
-        if Toggles.Esp.Value then ESP:SetBox(Value) end
+        EspBox:SetEnabled(Value)
     end
 })
 
-VisualGroup:AddToggle('Names', {
+EspDepBox:AddToggle('Names', {
     Text    = 'Names',
     Default = false,
-    Tooltip = 'Displays player names above their character',
+    Tooltip = 'Shows player display names above their head',
     Callback = function(Value)
-        if Toggles.Esp.Value then ESP:SetNames(Value) end
+        EspNames:SetEnabled(Value)
     end
 })
 
-VisualGroup:AddToggle('DistanceEnabled', {
+EspDepBox:AddToggle('DistanceEnabled', {
     Text    = 'Distance',
     Default = false,
-    Tooltip = 'Enable distance-based ESP filtering',
+    Tooltip = 'Shows stud distance below each player',
     Callback = function(Value)
-        if Toggles.Esp.Value then ESP:SetDistanceEnabled(Value) end
+        EspDistance:SetEnabled(Value)
     end
 })
 
-local DistanceDepbox = VisualGroup:AddDependencyBox()
-DistanceDepbox:AddSlider('EspDistance', {
-    Text     = 'Distance',
+EspDepBox:AddToggle('GlowCharacter', {
+    Text    = 'Glow Character',
+    Default = false,
+    Tooltip = 'Applies a Highlight glow to every player character',
+    Callback = function(Value)
+        EspGlow:SetEnabled(Value)
+    end
+})
+
+-- DepBox A only shows when ESP master is ON
+EspDepBox:SetupDependencies({ { Toggles.Esp, true } })
+
+-- DepBox B — distance slider, only shown when ESP AND Distance are both ON
+local DistSliderDepBox = VisualGroup:AddDependencyBox()
+
+DistSliderDepBox:AddSlider('EspDistance', {
+    Text     = 'Max Distance',
     Default  = 0,
     Min      = 0,
     Max      = 5000,
     Rounding = 0,
     Compact  = false,
-    Tooltip  = 'Max distance to render ESP',
+    Tooltip  = 'Hide players beyond this many studs (0 = unlimited)',
     Callback = function(Value)
-        if Toggles.Esp.Value then ESP:SetDistance(Value) end
-    end
-})
-DistanceDepbox:SetupDependencies({ { Toggles.DistanceEnabled, true } })
-
-VisualGroup:AddToggle('GlowCharacter', {
-    Text    = 'Glow Character',
-    Default = false,
-    Tooltip = 'Applies a glow effect to player characters',
-    Callback = function(Value)
-        if Toggles.Esp.Value then ESP:SetGlow(Value) end
+        EspDistance:SetMaxDistance(Value)
     end
 })
 
+-- slider only visible when both conditions are met
+DistSliderDepBox:SetupDependencies({
+    { Toggles.Esp,             true },
+    { Toggles.DistanceEnabled, true },
+})
+
+-- Full Brightness — standalone, no ESP dependency
 VisualGroup:AddToggle('FullBrightness', {
     Text    = 'Full Brightness',
     Default = false,
-    Tooltip = 'Removes darkness and lighting effects',
+    Tooltip = 'Removes ambient darkness and lighting effects',
     Callback = function(Value)
         local Lighting = game:GetService('Lighting')
         if Value then
@@ -355,7 +377,10 @@ Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     AtmRefreshConnection:Disconnect()
     FlyCar:SetEnabled(false)
-    ESP:SetEnabled(false)
+    EspBox:SetEnabled(false)
+    EspNames:SetEnabled(false)
+    EspDistance:SetEnabled(false)
+    EspGlow:SetEnabled(false)
     InfMag:SetEnabled(false)
     InfAmmo:SetEnabled(false)
     NoRecoil:SetEnabled(false)
