@@ -1,29 +1,25 @@
 local repo    = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local featRepo = 'https://raw.githubusercontent.com/fakedemonn/thiswasapracticehubsoicanstartmakingscriptsandmakeitpaidthisisforfree/main/features/'
 
--- ─── Feature modules ──────────────────────────────────────────────────────────
-local FlyCar       = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
-local EspBox       = loadstring(game:HttpGet(featRepo .. 'esp_box.luau'))()
-local EspNames     = loadstring(game:HttpGet(featRepo .. 'esp_names.luau'))()
-local EspDistance  = loadstring(game:HttpGet(featRepo .. 'esp_distance.luau'))()
-local EspGlow      = loadstring(game:HttpGet(featRepo .. 'esp_glow.luau'))()
-local InfMag       = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
-local InfAmmo      = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
-local NoRecoil     = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
-local RapidShoot   = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
+local FlyCar      = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
+local EspBox      = loadstring(game:HttpGet(featRepo .. 'esp_box.luau'))()
+local EspNames    = loadstring(game:HttpGet(featRepo .. 'esp_names.luau'))()
+local EspDistance = loadstring(game:HttpGet(featRepo .. 'esp_distance.luau'))()
+local EspGlow     = loadstring(game:HttpGet(featRepo .. 'esp_glow.luau'))()
+local InfMag      = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
+local InfAmmo     = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
+local NoRecoil    = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
+local RapidShoot  = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
 
--- ─── LinoriaLib ───────────────────────────────────────────────────────────────
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
 local SaveManager  = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
 
--- ─── Services / ATM remote (confirmed works without proximity) ─────────────────
 local Players  = game:GetService('Players')
 local RS       = game:GetService('ReplicatedStorage')
 local ATMEvent = RS:WaitForChild('ATMEvent')
 local plr      = Players.LocalPlayer
 
--- ─── Window ───────────────────────────────────────────────────────────────────
 local Window = Library:CreateWindow({
     Title        = 'Average Day in America',
     Center       = true,
@@ -38,16 +34,14 @@ local Tabs = {
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
 
--- ─── MISCELLANEOUS (left) ─────────────────────────────────────────────────────
+-- MISCELLANEOUS (left)
 local MiscGroup = Tabs.Main:AddLeftGroupbox('Miscellaneous')
 
 MiscGroup:AddToggle('Aimbot', {
-    Text    = 'Aimbot',
-    Default = false,
-    Tooltip = 'Enables aimbot',
-    Callback = function(Value)
-        print('[Aimbot]', Value)
-    end
+    Text     = 'Aimbot',
+    Default  = false,
+    Tooltip  = 'Enables aimbot',
+    Callback = function(Value) end
 }):AddKeyPicker('AimbotKeybind', {
     Default  = 'None',
     NoUI     = false,
@@ -64,59 +58,47 @@ MiscGroup:AddDropdown('AimbotBodyPart', {
     Multi    = false,
     Text     = 'Body Part',
     Tooltip  = 'Select which body part to aim at',
-    Callback = function(Value)
-        print('[AimbotBodyPart]', Value)
-    end
+    Callback = function(Value) end
 })
 
 MiscGroup:AddDivider()
 
 MiscGroup:AddToggle('InfMag', {
-    Text    = 'Inf Mag',
-    Default = false,
-    Tooltip = 'Infinite magazine — clip never empties',
-    Callback = function(Value)
-        InfMag:SetEnabled(Value)
-    end
+    Text     = 'Inf Mag',
+    Default  = false,
+    Tooltip  = 'Infinite magazine',
+    Callback = function(Value) InfMag:SetEnabled(Value) end
 })
 
 MiscGroup:AddToggle('InfAmmo', {
-    Text    = 'Inf Ammo Reserves',
-    Default = false,
-    Tooltip = 'Infinite reserve ammo — never need to scavenge',
-    Callback = function(Value)
-        InfAmmo:SetEnabled(Value)
-    end
+    Text     = 'Inf Ammo Reserves',
+    Default  = false,
+    Tooltip  = 'Infinite reserve ammo',
+    Callback = function(Value) InfAmmo:SetEnabled(Value) end
 })
 
 MiscGroup:AddToggle('NoRecoil', {
-    Text    = 'No Recoil',
-    Default = false,
-    Tooltip = 'Removes weapon recoil entirely',
-    Callback = function(Value)
-        NoRecoil:SetEnabled(Value)
-    end
+    Text     = 'No Recoil',
+    Default  = false,
+    Tooltip  = 'Removes weapon recoil',
+    Callback = function(Value) NoRecoil:SetEnabled(Value) end
 })
 
 MiscGroup:AddToggle('RapidShoot', {
-    Text    = 'Rapid Shoot',
-    Default = false,
-    Tooltip = 'Removes firerate cap on all weapons',
-    Callback = function(Value)
-        RapidShoot:SetEnabled(Value)
-    end
+    Text     = 'Rapid Shoot',
+    Default  = false,
+    Tooltip  = 'Removes firerate cap',
+    Callback = function(Value) RapidShoot:SetEnabled(Value) end
 })
 
--- ─── FUN (right) ──────────────────────────────────────────────────────────────
+-- FUN (right)
 local FunGroup = Tabs.Main:AddRightGroupbox('Fun')
 
 FunGroup:AddToggle('FlyCar', {
-    Text    = 'Fly Car',
-    Default = false,
-    Tooltip = 'Makes your current vehicle fly',
-    Callback = function(Value)
-        FlyCar:SetEnabled(Value)
-    end
+    Text     = 'Fly Car',
+    Default  = false,
+    Tooltip  = 'Makes your current vehicle fly',
+    Callback = function(Value) FlyCar:SetEnabled(Value) end
 }):AddKeyPicker('FlyCarKeybind', {
     Default  = 'F',
     NoUI     = false,
@@ -131,12 +113,11 @@ FunGroup:AddToggle('FlyCar', {
 FunGroup:AddLabel('WASD move | E up | Q down | RShift boost', true)
 
 FunGroup:AddButton({
-    Text = 'Teleport to Car',
-    Func = function()
+    Text        = 'Teleport to Car',
+    Func        = function()
         local char = plr.Character
         local hrp  = char and char:FindFirstChild('HumanoidRootPart')
         if not hrp then return end
-
         local nearest, dist = nil, math.huge
         for _, v in ipairs(workspace:GetDescendants()) do
             if v:IsA('VehicleSeat') then
@@ -144,7 +125,6 @@ FunGroup:AddButton({
                 if d < dist then dist = d; nearest = v end
             end
         end
-
         if nearest then hrp.CFrame = nearest.CFrame + Vector3.new(0, 4, 0) end
     end,
     DoubleClick = false,
@@ -152,22 +132,17 @@ FunGroup:AddButton({
 })
 
 FunGroup:AddButton({
-    Text = 'Respawn',
-    Func = function()
+    Text        = 'Respawn',
+    Func        = function()
         plr.Character:FindFirstChildOfClass('Humanoid').Health = 0
     end,
     DoubleClick = false,
     Tooltip     = 'Respawns your character'
 })
 
--- ─── ATM ANYWHERE (right, below Fun) ─────────────────────────────────────────
--- FireServer directly — no proximity check required, confirmed from recon.
--- Signature: ATMEvent:FireServer(amount: number, action: "deposit"|"withdraw")
--- Server validates amount against real balance, so entries above balance are rejected silently.
-
+-- ATM (right)
 local AtmGroup = Tabs.Main:AddRightGroupbox('ATM')
 
--- Live balance display — updated on load and after every action
 local function getWallet()
     local ls = plr:FindFirstChild('leaderstats')
     return ls and ls:FindFirstChild('Cash') and ls.Cash.Value or 0
@@ -186,7 +161,6 @@ local function refreshBalances()
     BankLabel:SetText(('Bank:   $%d'):format(getBank()))
 end
 
--- Amount input — numeric only, fires on every keystroke so the value is always fresh
 AtmGroup:AddInput('AtmAmount', {
     Default     = '1000',
     Numeric     = true,
@@ -198,112 +172,90 @@ AtmGroup:AddInput('AtmAmount', {
 
 AtmGroup:AddDivider()
 
--- Withdraw button
 AtmGroup:AddButton({
-    Text = 'Withdraw',
-    Func = function()
+    Text        = 'Withdraw',
+    Func        = function()
         local amount = tonumber(Options.AtmAmount.Value)
-        if not amount or amount <= 0 then
-            Library:Notify('Enter a valid amount first.', 3)
-            return
-        end
+        if not amount or amount <= 0 then Library:Notify('Enter a valid amount first.', 3); return end
         ATMEvent:FireServer(amount, 'withdraw')
-        task.wait(0.4)   -- give the server one tick to update the value
+        task.wait(0.4)
         refreshBalances()
         Library:Notify(('Withdrew $%d'):format(amount), 3)
     end,
     DoubleClick = false,
-    Tooltip     = 'Withdraw from bank to wallet — must have the funds in bank'
+    Tooltip     = 'Withdraw from bank to wallet'
 })
 
--- Deposit button
 AtmGroup:AddButton({
-    Text = 'Deposit',
-    Func = function()
+    Text        = 'Deposit',
+    Func        = function()
         local amount = tonumber(Options.AtmAmount.Value)
-        if not amount or amount <= 0 then
-            Library:Notify('Enter a valid amount first.', 3)
-            return
-        end
+        if not amount or amount <= 0 then Library:Notify('Enter a valid amount first.', 3); return end
         ATMEvent:FireServer(amount, 'deposit')
         task.wait(0.4)
         refreshBalances()
         Library:Notify(('Deposited $%d'):format(amount), 3)
     end,
     DoubleClick = false,
-    Tooltip     = 'Deposit from wallet to bank — must have the funds in wallet'
+    Tooltip     = 'Deposit from wallet to bank'
 })
 
--- Refresh balance display every 3 seconds passively
--- (leaderstats.Cash can change from in-game events, keeps label honest)
 local AtmRefreshConnection = game:GetService('RunService').Heartbeat:Connect(function()
     if Library.Unloaded then return end
-    if (tick() % 3) < 0.016 then
-        refreshBalances()
-    end
+    if (tick() % 3) < 0.016 then refreshBalances() end
 end)
 
--- ─── VISUAL TAB ───────────────────────────────────────────────────────────────
+-- VISUAL TAB
 local VisualGroup = Tabs.Visual:AddLeftGroupbox('Visualization')
 
--- Master ESP toggle — nothing below activates unless this is ON
 VisualGroup:AddToggle('Esp', {
-    Text    = 'ESP',
-    Default = false,
-    Tooltip = 'Master switch — all ESP features require this ON',
+    Text     = 'ESP',
+    Default  = false,
+    Tooltip  = 'Master switch — turn this on first',
     Callback = function(Value)
-        -- sub-features already gated by their own dependency box,
-        -- but re-push their current toggle state so they respond immediately
-        EspBox:SetEnabled(Value and Toggles.Box.Value)
-        EspNames:SetEnabled(Value and Toggles.Names.Value)
-        EspDistance:SetEnabled(Value and Toggles.DistanceEnabled.Value)
-        EspGlow:SetEnabled(Value and Toggles.GlowCharacter.Value)
+        if EspBox      then EspBox:SetEnabled(Value and Toggles.Box.Value) end
+        if EspNames    then EspNames:SetEnabled(Value and Toggles.Names.Value) end
+        if EspDistance then EspDistance:SetEnabled(Value and Toggles.DistanceEnabled.Value) end
+        if EspGlow     then EspGlow:SetEnabled(Value and Toggles.GlowCharacter.Value) end
     end
 })
 
--- DepBox A — grayed out and non-functional while ESP is OFF
-local EspDepBox = VisualGroup:AddDependencyBox()
-
-EspDepBox:AddToggle('Box', {
-    Text    = 'Box',
-    Default = false,
-    Tooltip = 'Draws a 2D bounding box around each player',
+VisualGroup:AddToggle('Box', {
+    Text     = 'Box',
+    Default  = false,
+    Tooltip  = 'L-corner box around players',
     Callback = function(Value)
-        EspBox:SetEnabled(Value)
+        if EspBox then EspBox:SetEnabled(Toggles.Esp.Value and Value) end
     end
 })
 
-EspDepBox:AddToggle('Names', {
-    Text    = 'Names',
-    Default = false,
-    Tooltip = 'Shows player display names above their head',
+VisualGroup:AddToggle('Names', {
+    Text     = 'Names',
+    Default  = false,
+    Tooltip  = 'Display name above box',
     Callback = function(Value)
-        EspNames:SetEnabled(Value)
+        if EspNames then EspNames:SetEnabled(Toggles.Esp.Value and Value) end
     end
 })
 
-EspDepBox:AddToggle('DistanceEnabled', {
-    Text    = 'Distance',
-    Default = false,
-    Tooltip = 'Shows stud distance below each player',
+VisualGroup:AddToggle('DistanceEnabled', {
+    Text     = 'Distance',
+    Default  = false,
+    Tooltip  = 'Stud distance below box',
     Callback = function(Value)
-        EspDistance:SetEnabled(Value)
+        if EspDistance then EspDistance:SetEnabled(Toggles.Esp.Value and Value) end
     end
 })
 
-EspDepBox:AddToggle('GlowCharacter', {
-    Text    = 'Glow Character',
-    Default = false,
-    Tooltip = 'Applies a Highlight glow to every player character',
+VisualGroup:AddToggle('GlowCharacter', {
+    Text     = 'Glow Character',
+    Default  = false,
+    Tooltip  = 'Highlight glow on players',
     Callback = function(Value)
-        EspGlow:SetEnabled(Value)
+        if EspGlow then EspGlow:SetEnabled(Toggles.Esp.Value and Value) end
     end
 })
 
--- DepBox A only shows when ESP master is ON
-EspDepBox:SetupDependencies({ { Toggles.Esp, true } })
-
--- DepBox B — distance slider, only shown when ESP AND Distance are both ON
 local DistSliderDepBox = VisualGroup:AddDependencyBox()
 
 DistSliderDepBox:AddSlider('EspDistance', {
@@ -313,35 +265,26 @@ DistSliderDepBox:AddSlider('EspDistance', {
     Max      = 5000,
     Rounding = 0,
     Compact  = false,
-    Tooltip  = 'Hide players beyond this many studs (0 = unlimited)',
+    Tooltip  = '0 = unlimited',
     Callback = function(Value)
-        EspDistance:SetMaxDistance(Value)
+        if EspDistance then EspDistance:SetMaxDistance(Value) end
     end
 })
 
--- slider only visible when both conditions are met
-DistSliderDepBox:SetupDependencies({
-    { Toggles.Esp,             true },
-    { Toggles.DistanceEnabled, true },
-})
+DistSliderDepBox:SetupDependencies({ { Toggles.DistanceEnabled, true } })
 
--- Full Brightness — standalone, no ESP dependency
 VisualGroup:AddToggle('FullBrightness', {
-    Text    = 'Full Brightness',
-    Default = false,
-    Tooltip = 'Removes ambient darkness and lighting effects',
+    Text     = 'Full Brightness',
+    Default  = false,
+    Tooltip  = 'Removes ambient darkness',
     Callback = function(Value)
         local Lighting = game:GetService('Lighting')
-        if Value then
-            Lighting.Brightness = 2
-            Lighting.ClockTime  = 14
-        else
-            Lighting.Brightness = 1
-        end
+        if Value then Lighting.Brightness = 2; Lighting.ClockTime = 14
+        else Lighting.Brightness = 1 end
     end
 })
 
--- ─── UI SETTINGS TAB ──────────────────────────────────────────────────────────
+-- UI SETTINGS TAB
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
 
 MenuGroup:AddButton('Unload', function() Library:Unload() end)
@@ -354,7 +297,6 @@ MenuGroup:AddLabel('Menu bind'):AddKeyPicker('MenuKeybind', {
 Library.ToggleKeybind = Options.MenuKeybind
 Library:SetWatermarkVisibility(true)
 
--- ─── FPS / Ping watermark ─────────────────────────────────────────────────────
 local FrameTimer   = tick()
 local FrameCounter = 0
 local FPS          = 60
@@ -372,15 +314,14 @@ local WatermarkConnection = game:GetService('RunService').RenderStepped:Connect(
     ))
 end)
 
--- ─── Unload cleanup ───────────────────────────────────────────────────────────
 Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     AtmRefreshConnection:Disconnect()
     FlyCar:SetEnabled(false)
-    EspBox:SetEnabled(false)
-    EspNames:SetEnabled(false)
-    EspDistance:SetEnabled(false)
-    EspGlow:SetEnabled(false)
+    if EspBox      then EspBox:SetEnabled(false) end
+    if EspNames    then EspNames:SetEnabled(false) end
+    if EspDistance then EspDistance:SetEnabled(false) end
+    if EspGlow     then EspGlow:SetEnabled(false) end
     InfMag:SetEnabled(false)
     InfAmmo:SetEnabled(false)
     NoRecoil:SetEnabled(false)
@@ -388,7 +329,6 @@ Library:OnUnload(function()
     Library.Unloaded = true
 end)
 
--- ─── Theme / Save ─────────────────────────────────────────────────────────────
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 
