@@ -1,10 +1,19 @@
-local plr = game:GetService("Players").LocalPlayer
+local plr      = game:GetService("Players").LocalPlayer
+local enabled  = false
+local charConn = nil
 
 local function isStateTable(t)
     if type(t) ~= "table" then return false end
     return type(rawget(t, "ElapsedCooldownTime")) == "number"
-       and type(rawget(t, "ShotID")) == "number"
-       and type(rawget(t, "Mag")) == "number"
+       and type(rawget(t, "ShotID"))              == "number"
+       and type(rawget(t, "Mag"))                 == "number"
+end
+
+local function isRateTable(t)
+    if type(t) ~= "table" then return false end
+    return rawget(t, "FireRate")  ~= nil
+        or rawget(t, "FireDelay") ~= nil
+        or rawget(t, "Firerate")  ~= nil
 end
 
 local function safeSet(t, k, v)
@@ -23,61 +32,102 @@ local function safeMeta(t, meta)
     end
 end
 
-local function nukeFireRate(gun)
+local function lockStateTable(t)
+    safeSet(t, "ElapsedCooldownTime", 0)
+    safeMeta(t, {
+        __index = function(self, k)
+            if enabled then
+                if k == "ElapsedCooldownTime" then return 0 end
+                if k == "Mag" or k == "Ammo"  then return 9999 end
+            end
+            return rawget(self, k)
+        end,
+        __newindex = function(self, k, v)
+            if enabled then
+                if k == "ElapsedCooldownTime" then rawset(self, k, 0) return end
+                if k == "Mag" or k == "Ammo"  then rawset(self, k, 9999) return end
+            end
+            rawset(self, k, v)
+        end,
+    })
+end
+
+local function lockRateTable(t)
+    if rawget(t, "FireRate")  ~= nil then safeSet(t, "FireRate",  0.01) end
+    if rawget(t, "FireDelay") ~= nil then safeSet(t, "FireDelay", 0.01) end
+    if rawget(t, "Firerate")  ~= nil then safeSet(t, "Firerate",  0.01) end
+    safeMeta(t, {
+        __index = function(self, k)
+            if enabled and (k == "FireRate" or k == "FireDelay" or k == "Firerate") then
+                return 0.01
+            end
+            return rawget(self, k)
+        end,
+        __newindex = function(self, k, v)
+            if enabled and (k == "FireRate" or k == "FireDelay" or k == "Firerate") then
+                rawset(self, k, 0.01)
+            else
+                rawset(self, k, v)
+            end
+        end,
+    })
+end
+
+local function scanGC()
     for _, t in ipairs(getgc(true)) do
         if type(t) ~= "table" then continue end
-        if isStateTable(t) then
-            safeSet(t, "ElapsedCooldownTime", 0)
-            safeMeta(t, {
-                __newindex = function(self, k, v)
-                    if k == "ElapsedCooldownTime" then
-                        rawset(self, k, 0)
-                    elseif k == "Mag" or k == "Ammo" then
-                        rawset(self, k, 9999)
-                    else
-                        rawset(self, k, v)
-                    end
-                end,
-                __index = function(self, k)
-                    if k == "ElapsedCooldownTime" then return 0 end
-                    if k == "Mag" or k == "Ammo" then return 9999 end
-                    return rawget(self, k)
-                end
-            })
-        end
-        local fireRate    = rawget(t, "FireRate")
-        local fireDelay   = rawget(t, "FireDelay") or rawget(t, "Firerate")
-        local shootCounts = rawget(t, "ShootCounts")
-        if fireRate ~= nil or fireDelay ~= nil or shootCounts ~= nil then
-            if fireRate    ~= nil then safeSet(t, "FireRate",    0.01) end
-            if fireDelay   ~= nil then safeSet(t, "FireDelay",   0.01) end
-            if shootCounts ~= nil then safeSet(t, "ShootCounts", 1)    end
-            safeMeta(t, {
-                __newindex = function(self, k, v)
-                    if k == "FireRate" or k == "FireDelay" or k == "Firerate" then
-                        rawset(self, k, 0.01)
-                    else
-                        rawset(self, k, v)
-                    end
-                end,
-                __index = function(self, k)
-                    if k == "FireRate" or k == "FireDelay" or k == "Firerate" then
-                        return 0.01
-                    end
-                    return rawget(self, k)
-                end
-            })
+        if isStateTable(t) then lockStateTable(t) end
+        if isRateTable(t)  then lockRateTable(t)  end
+    end
+end
+
+local function applyToGun(gun)
+    scanGC()
+    -- belt-and-suspenders: also zero out any Instance values
+    for _, v in ipairs(gun:GetDescendants()) do
+        if v:IsA("NumberValue") or v:IsA("IntValue") then
+            local n = v.Name
+            if n == "FireRate" or n == "FireDelay" or n == "Firerate" then
+                pcall(function() v.Value = 0.01 end)
+            end
         end
     end
 end
 
-local char = plr.Character or plr.CharacterAdded:Wait()
-char.ChildAdded:Connect(function(v)
-    if v:IsA("Tool") then
-        task.wait(0.5)
-        nukeFireRate(v)
+local function hookChar(char)
+    if charConn then charConn:Disconnect() charConn = nil end
+
+    charConn = char.ChildAdded:Connect(function(v)
+        if not enabled then return end
+        if v:IsA("Tool") then
+            task.wait(0.5)
+            applyToGun(v)
+        end
+    end)
+
+    if enabled then
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Tool") then applyToGun(v) end
+        end
     end
-end)
-for _, v in ipairs(char:GetChildren()) do
-    if v:IsA("Tool") then nukeFireRate(v) end
 end
+
+plr.CharacterAdded:Connect(hookChar)
+
+local initChar = plr.Character
+if initChar then hookChar(initChar) end
+
+return {
+    SetEnabled = function(_, value)
+        enabled = value
+        if value then
+            local c = plr.Character
+            if c then
+                scanGC()
+                for _, v in ipairs(c:GetChildren()) do
+                    if v:IsA("Tool") then applyToGun(v) end
+                end
+            end
+        end
+    end,
+}
