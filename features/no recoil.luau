@@ -1,4 +1,23 @@
-local plr = game:GetService("Players").LocalPlayer
+local plr      = game:GetService("Players").LocalPlayer
+local enabled  = false
+local charConn = nil
+
+local RECOIL_KEYS = { "Recoil", "RecoilX", "RecoilY", "Kickback", "Spread", "Deviation" }
+
+local function isRecoilTable(t)
+    if type(t) ~= "table" then return false end
+    for _, k in ipairs(RECOIL_KEYS) do
+        if rawget(t, k) ~= nil then return true end
+    end
+    return false
+end
+
+local function isRecoilKey(k)
+    for _, rk in ipairs(RECOIL_KEYS) do
+        if k == rk then return true end
+    end
+    return false
+end
 
 local function safeSet(t, k, v)
     local ok = pcall(rawset, t, k, v)
@@ -16,60 +35,79 @@ local function safeMeta(t, meta)
     end
 end
 
-local function noRecoilOnGun(gun)
-    for _, t in ipairs(getgc(true)) do
-        if type(t) ~= "table" then continue end
-        local recoil    = rawget(t, "Recoil")
-        local recoilX   = rawget(t, "RecoilX")
-        local recoilY   = rawget(t, "RecoilY")
-        local kickback  = rawget(t, "Kickback")
-        local spread    = rawget(t, "Spread")
-        local deviation = rawget(t, "Deviation")
-        if recoil ~= nil or recoilX ~= nil or recoilY ~= nil
-        or kickback ~= nil or spread ~= nil or deviation ~= nil then
-            if recoil    ~= nil then safeSet(t, "Recoil",    0) end
-            if recoilX   ~= nil then safeSet(t, "RecoilX",   0) end
-            if recoilY   ~= nil then safeSet(t, "RecoilY",   0) end
-            if kickback  ~= nil then safeSet(t, "Kickback",  0) end
-            if spread    ~= nil then safeSet(t, "Spread",    0) end
-            if deviation ~= nil then safeSet(t, "Deviation", 0) end
-            safeMeta(t, {
-                __newindex = function(self, k, v)
-                    if k == "Recoil" or k == "RecoilX" or k == "RecoilY"
-                    or k == "Kickback" or k == "Spread" or k == "Deviation" then
-                        rawset(self, k, 0)
-                    else
-                        rawset(self, k, v)
-                    end
-                end,
-                __index = function(self, k)
-                    if k == "Recoil" or k == "RecoilX" or k == "RecoilY"
-                    or k == "Kickback" or k == "Spread" or k == "Deviation" then
-                        return 0
-                    end
-                    return rawget(self, k)
-                end
-            })
-        end
+local function lockRecoilTable(t)
+    for _, k in ipairs(RECOIL_KEYS) do
+        if rawget(t, k) ~= nil then safeSet(t, k, 0) end
     end
+    safeMeta(t, {
+        __index = function(self, k)
+            if enabled and isRecoilKey(k) then return 0 end
+            return rawget(self, k)
+        end,
+        __newindex = function(self, k, v)
+            if enabled and isRecoilKey(k) then
+                rawset(self, k, 0)
+            else
+                rawset(self, k, v)
+            end
+        end,
+    })
+end
+
+local function scanGC()
+    for _, t in ipairs(getgc(true)) do
+        if isRecoilTable(t) then lockRecoilTable(t) end
+    end
+end
+
+local function applyToGun(gun)
+    scanGC()
     for _, v in ipairs(gun:GetDescendants()) do
-        local n = string.lower(v.Name)
         if v:IsA("NumberValue") or v:IsA("IntValue") then
-            if string.find(n, "recoil") or string.find(n, "kickback")
-            or string.find(n, "spread") or string.find(n, "deviation") then
+            local n = v.Name:lower()
+            if n:find("recoil") or n:find("kickback")
+            or n:find("spread") or n:find("deviation") then
                 pcall(function() v.Value = 0 end)
             end
         end
     end
 end
 
-local char = plr.Character or plr.CharacterAdded:Wait()
-char.ChildAdded:Connect(function(v)
-    if v:IsA("Tool") then
-        task.wait(0.5)
-        noRecoilOnGun(v)
+local function hookChar(char)
+    if charConn then charConn:Disconnect() charConn = nil end
+
+    charConn = char.ChildAdded:Connect(function(v)
+        if not enabled then return end
+        if v:IsA("Tool") then
+            task.wait(0.5)
+            applyToGun(v)
+        end
+    end)
+
+    if enabled then
+        for _, v in ipairs(char:GetChildren()) do
+            if v:IsA("Tool") then applyToGun(v) end
+        end
     end
-end)
-for _, v in ipairs(char:GetChildren()) do
-    if v:IsA("Tool") then noRecoilOnGun(v) end
 end
+
+plr.CharacterAdded:Connect(hookChar)
+
+local initChar = plr.Character
+if initChar then hookChar(initChar) end
+
+return {
+    SetEnabled = function(_, value)
+        enabled = value
+        if value then
+            local c = plr.Character
+            if c then
+                scanGC()
+                for _, v in ipairs(c:GetChildren()) do
+                    if v:IsA("Tool") then applyToGun(v) end
+                end
+            end
+        end
+    end,
+}
+
