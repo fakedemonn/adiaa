@@ -8,21 +8,31 @@ local maxDist = 0
 local labels  = {}
 local conn    = nil
 
-local function getBoxBottom(char)
+local function getBottomAndDist(char)
     local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return nil, nil end
+    if not hrp then return nil, nil end
 
-    local hip  = hum.HipHeight + 0.5
-    local top3 = hrp.Position + Vector3.new(0, hip + 1.6, 0)
-    local bot3 = hrp.Position - Vector3.new(0, hip, 0)
+    local minX, maxX = math.huge, -math.huge
+    local maxY       = -math.huge
+    local valid      = false
 
-    local topV, vis = Camera:WorldToViewportPoint(top3)
-    local botV      = Camera:WorldToViewportPoint(bot3)
-    if not vis or topV.Z < 0 then return nil, nil end
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local sv, vis = Camera:WorldToViewportPoint(part.Position)
+            if vis and sv.Z > 0 then
+                valid = true
+                if sv.X < minX then minX = sv.X end
+                if sv.X > maxX then maxX = sv.X end
+                if sv.Y > maxY then maxY = sv.Y end
+            end
+        end
+    end
 
+    if not valid then return nil, nil end
+
+    local cx   = (minX + maxX) / 2
     local dist = (Camera.CFrame.Position - hrp.Position).Magnitude
-    return Vector2.new(topV.X, botV.Y + 3), dist
+    return Vector2.new(cx, maxY + 4), dist
 end
 
 local function newLabel()
@@ -52,7 +62,10 @@ local function startLoop()
     conn = RunService.RenderStepped:Connect(function()
         if not enabled then return end
         for p, lbl in pairs(labels) do
-            local pos, dist = p.Character and getBoxBottom(p.Character)
+            local pos, dist
+            if p.Character then
+                pos, dist = getBottomAndDist(p.Character)
+            end
             if pos and dist then
                 if maxDist > 0 and dist > maxDist then
                     lbl.Visible = false
