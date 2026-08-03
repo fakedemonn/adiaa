@@ -3,23 +3,26 @@ BuyWeapons.__index = BuyWeapons
 
 function BuyWeapons:_scan()
     self._catalog = {}
-    -- wait for shop to exist before scanning
-    local map      = workspace:WaitForChild("Map", 15)
+    local map = workspace:WaitForChild("Map", 15)
     if not map then return end
-    local nature   = map:WaitForChild("Nature", 10)
-    if not nature then return end
-    local structs  = nature:WaitForChild("Structures", 10)
-    if not structs then return end
-    local shop     = structs:WaitForChild("ValsToolsAndWeapons", 10)
-    if not shop then return end
+    local systems = map:WaitForChild("Systems", 10)
+    if not systems then return end
+    local buyPrompts = systems:WaitForChild("BuyPrompts", 10)
+    if not buyPrompts then return end
 
-    for _, obj in ipairs(shop:GetDescendants()) do
-        if obj:IsA("ProximityPrompt") and obj.ObjectText ~= "" then
+    local seen = {}
+    for _, obj in ipairs(buyPrompts:GetDescendants()) do
+        if obj:IsA("ProximityPrompt") and obj.ObjectText ~= ""
+        and not string.find(obj.ObjectText, "Error") then
             local price = tonumber(obj.ActionText:match("%((%d+)%)")) or 0
-            self._catalog[obj.ObjectText] = {
-                price  = price,
-                prompt = obj,
-            }
+            local key = obj.ObjectText .. price
+            if not seen[key] then
+                seen[key] = true
+                self._catalog[obj.ObjectText] = {
+                    price  = price,
+                    prompt = obj,
+                }
+            end
         end
     end
 end
