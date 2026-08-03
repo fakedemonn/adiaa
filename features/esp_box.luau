@@ -8,23 +8,32 @@ local boxes   = {}
 local conn    = nil
 
 local function getBounds(char)
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hrp or not hum then return nil end
+    local minX, minY = math.huge,  math.huge
+    local maxX, maxY = -math.huge, -math.huge
+    local valid = false
 
-    local hip  = hum.HipHeight + 0.5
-    local top3 = hrp.Position + Vector3.new(0, hip + 1.6, 0)
-    local bot3 = hrp.Position - Vector3.new(0, hip,       0)
+    for _, part in ipairs(char:GetDescendants()) do
+        if part:IsA("BasePart") then
+            local sv, vis = Camera:WorldToViewportPoint(part.Position)
+            if vis and sv.Z > 0 then
+                valid = true
+                if sv.X < minX then minX = sv.X end
+                if sv.Y < minY then minY = sv.Y end
+                if sv.X > maxX then maxX = sv.X end
+                if sv.Y > maxY then maxY = sv.Y end
+            end
+        end
+    end
 
-    local topV, topVis = Camera:WorldToViewportPoint(top3)
-    local botV         = Camera:WorldToViewportPoint(bot3)
-    if not topVis or topV.Z < 0 then return nil end
+    if not valid then return nil end
 
-    local h  = math.abs(botV.Y - topV.Y)
-    local w  = h * 0.45
-    local cx = topV.X
-
-    return { x = cx - w / 2, y = topV.Y, w = w, h = h }
+    local pad = 6
+    return {
+        x = minX - pad,
+        y = minY - pad,
+        w = (maxX - minX) + pad * 2,
+        h = (maxY - minY) + pad * 2,
+    }
 end
 
 local function newBox()
@@ -44,29 +53,14 @@ local function drawBox(lines, b)
     local CL = math.floor(b.w * 0.28)
     local CV = math.floor(b.h * 0.22)
 
-    -- top-left
-    lines[1].From = Vector2.new(b.x,         b.y)
-    lines[1].To   = Vector2.new(b.x + CL,    b.y)
-    lines[2].From = Vector2.new(b.x,         b.y)
-    lines[2].To   = Vector2.new(b.x,         b.y + CV)
-
-    -- top-right
-    lines[3].From = Vector2.new(b.x + b.w,        b.y)
-    lines[3].To   = Vector2.new(b.x + b.w - CL,   b.y)
-    lines[4].From = Vector2.new(b.x + b.w,        b.y)
-    lines[4].To   = Vector2.new(b.x + b.w,        b.y + CV)
-
-    -- bottom-left
-    lines[5].From = Vector2.new(b.x,         b.y + b.h)
-    lines[5].To   = Vector2.new(b.x + CL,    b.y + b.h)
-    lines[6].From = Vector2.new(b.x,         b.y + b.h)
-    lines[6].To   = Vector2.new(b.x,         b.y + b.h - CV)
-
-    -- bottom-right
-    lines[7].From = Vector2.new(b.x + b.w,        b.y + b.h)
-    lines[7].To   = Vector2.new(b.x + b.w - CL,   b.y + b.h)
-    lines[8].From = Vector2.new(b.x + b.w,        b.y + b.h)
-    lines[8].To   = Vector2.new(b.x + b.w,        b.y + b.h - CV)
+    lines[1].From = Vector2.new(b.x,       b.y);       lines[1].To = Vector2.new(b.x + CL,       b.y)
+    lines[2].From = Vector2.new(b.x,       b.y);       lines[2].To = Vector2.new(b.x,             b.y + CV)
+    lines[3].From = Vector2.new(b.x + b.w, b.y);       lines[3].To = Vector2.new(b.x + b.w - CL, b.y)
+    lines[4].From = Vector2.new(b.x + b.w, b.y);       lines[4].To = Vector2.new(b.x + b.w,      b.y + CV)
+    lines[5].From = Vector2.new(b.x,       b.y + b.h); lines[5].To = Vector2.new(b.x + CL,       b.y + b.h)
+    lines[6].From = Vector2.new(b.x,       b.y + b.h); lines[6].To = Vector2.new(b.x,             b.y + b.h - CV)
+    lines[7].From = Vector2.new(b.x + b.w, b.y + b.h); lines[7].To = Vector2.new(b.x + b.w - CL, b.y + b.h)
+    lines[8].From = Vector2.new(b.x + b.w, b.y + b.h); lines[8].To = Vector2.new(b.x + b.w,      b.y + b.h - CV)
 
     for _, l in ipairs(lines) do l.Visible = true end
 end
@@ -92,8 +86,7 @@ local function startLoop()
     conn = RunService.RenderStepped:Connect(function()
         if not enabled then return end
         for p, lines in pairs(boxes) do
-            local char = p.Character
-            local b    = char and getBounds(char)
+            local b = p.Character and getBounds(p.Character)
             if b then drawBox(lines, b) else hideBox(lines) end
         end
     end)
