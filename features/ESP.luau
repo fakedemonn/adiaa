@@ -4,7 +4,7 @@ local localPlayer = Players.LocalPlayer
 
 local ESP = {}
 
-local enabled    = true
+local enabled    = false
 local showBox    = true
 local showNames  = true
 local showDist   = true
