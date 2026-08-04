@@ -1,20 +1,25 @@
-local repo    = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
+local repo     = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
 local featRepo = 'https://raw.githubusercontent.com/fakedemonn/thiswasapracticehubsoicanstartmakingscriptsandmakeitpaidthisisforfree/main/features/'
+local adiaa    = 'https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/'
 
-local FlyCar      = loadstring(game:HttpGet('https://raw.githubusercontent.com/fakedemonn/adiaa/main/features/FlyCar.luau'))()
-local InfMag      = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
-local InfAmmo     = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
-local NoRecoil    = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
-local RapidShoot  = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
-
--- ESP module (renamed to ESP.luau). Wrapped in pcall so the UI still loads if the URL is wrong.
-local EspRework
-do
-    local ok, mod = pcall(function()
-        return loadstring(game:HttpGet(featRepo .. 'ESP.luau'))()
+local function safeLoad(url)
+    local ok, result = pcall(function()
+        return loadstring(game:HttpGet(url))()
     end)
-    EspRework = (ok and type(mod) == 'table') and mod or nil
+    if not ok then
+        warn('[LOAD FAILED] ' .. url .. '\n' .. tostring(result))
+        return nil
+    end
+    return result
 end
+
+local FlyCar     = safeLoad(adiaa .. 'FlyCar.luau')
+local ESP        = safeLoad(adiaa .. 'ESP.luau')
+local Aimbot  = safeLoad(adiaa .. 'Aimbot.luau')
+local InfMag     = safeLoad(featRepo .. 'Inf%20mag.luau')
+local InfAmmo    = safeLoad(featRepo .. 'inf%20ammo%20reserves.luau')
+local NoRecoil   = safeLoad(featRepo .. 'no%20recoil.luau')
+local RapidShoot = safeLoad(featRepo .. 'rapid%20shoot.luau')
 
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -39,21 +44,50 @@ local Tabs = {
     ['UI Settings'] = Window:AddTab('UI Settings'),
 }
 
--- MISCELLANEOUS (left)
+-- ── MISCELLANEOUS (left) ──────────────────────────────────────────────────────
 local MiscGroup = Tabs.Main:AddLeftGroupbox('Miscellaneous')
 
 MiscGroup:AddToggle('Aimbot', {
     Text     = 'Aimbot',
     Default  = false,
-    Tooltip  = 'Enables aimbot',
-    Callback = function(Value) end
+    Tooltip  = 'Rotates camera toward nearest enemy',
+    Callback = function(Value)
+        if SilentAim then SilentAim:SetEnabled(Value) end
+    end
 }):AddKeyPicker('AimbotKeybind', {
     Default  = 'None',
     NoUI     = false,
     Mode     = 'Toggle',
-    Text     = 'Aimbot',
+    Text     = 'aimbot',
     Callback = function(Value)
         Toggles.Aimbot:SetValue(Value)
+        if SilentAim then SilentAim:SetEnabled(Value) end
+    end
+})
+
+MiscGroup:AddSlider('AimbotFov', {
+    Text     = 'FOV',
+    Default  = 120,
+    Min      = 0,
+    Max      = 500,
+    Rounding = 0,
+    Compact  = false,
+    Tooltip  = 'Pixel radius from screen center',
+    Callback = function(Value)
+        if SilentAim then SilentAim:SetFOV(Value) end
+    end
+})
+
+MiscGroup:AddSlider('AimbotSmoothing', {
+    Text     = 'Smoothing',
+    Default  = 25,
+    Min      = 1,
+    Max      = 100,
+    Rounding = 0,
+    Compact  = false,
+    Tooltip  = 'Higher = smoother / slower aim',
+    Callback = function(Value)
+        if SilentAim then SilentAim:SetSmoothing(Value) end
     end
 })
 
@@ -63,7 +97,18 @@ MiscGroup:AddDropdown('AimbotBodyPart', {
     Multi    = false,
     Text     = 'Body Part',
     Tooltip  = 'Select which body part to aim at',
-    Callback = function(Value) end
+    Callback = function(Value)
+        if SilentAim then SilentAim:SetBodyPart(Value) end
+    end
+})
+
+MiscGroup:AddToggle('TeamCheck', {
+    Text     = 'Team Check',
+    Default  = true,
+    Tooltip  = 'Skip teammates',
+    Callback = function(Value)
+        if SilentAim then SilentAim:SetTeamCheck(Value) end
+    end
 })
 
 MiscGroup:AddDivider()
@@ -72,38 +117,48 @@ MiscGroup:AddToggle('InfMag', {
     Text     = 'Inf Mag',
     Default  = false,
     Tooltip  = 'Infinite magazine',
-    Callback = function(Value) InfMag:SetEnabled(Value) end
+    Callback = function(Value)
+        if InfMag then InfMag:SetEnabled(Value) end
+    end
 })
 
 MiscGroup:AddToggle('InfAmmo', {
     Text     = 'Inf Ammo Reserves',
     Default  = false,
     Tooltip  = 'Infinite reserve ammo',
-    Callback = function(Value) InfAmmo:SetEnabled(Value) end
+    Callback = function(Value)
+        if InfAmmo then InfAmmo:SetEnabled(Value) end
+    end
 })
 
 MiscGroup:AddToggle('NoRecoil', {
     Text     = 'No Recoil',
     Default  = false,
     Tooltip  = 'Removes weapon recoil',
-    Callback = function(Value) NoRecoil:SetEnabled(Value) end
+    Callback = function(Value)
+        if NoRecoil then NoRecoil:SetEnabled(Value) end
+    end
 })
 
 MiscGroup:AddToggle('RapidShoot', {
     Text     = 'Rapid Shoot',
     Default  = false,
     Tooltip  = 'Removes firerate cap',
-    Callback = function(Value) RapidShoot:SetEnabled(Value) end
+    Callback = function(Value)
+        if RapidShoot then RapidShoot:SetEnabled(Value) end
+    end
 })
 
--- FUN (right)
+-- ── FUN (right) ───────────────────────────────────────────────────────────────
 local FunGroup = Tabs.Main:AddRightGroupbox('Fun')
 
 FunGroup:AddToggle('FlyCar', {
     Text     = 'Fly Car',
     Default  = false,
     Tooltip  = 'Makes your current vehicle fly',
-    Callback = function(Value) FlyCar:SetEnabled(Value) end
+    Callback = function(Value)
+        if FlyCar then FlyCar:SetEnabled(Value) end
+    end
 }):AddKeyPicker('FlyCarKeybind', {
     Default  = 'F',
     NoUI     = false,
@@ -111,7 +166,7 @@ FunGroup:AddToggle('FlyCar', {
     Text     = 'Fly Car',
     Callback = function(Value)
         Toggles.FlyCar:SetValue(Value)
-        FlyCar:SetEnabled(Value)
+        if FlyCar then FlyCar:SetEnabled(Value) end
     end
 })
 
@@ -145,7 +200,7 @@ FunGroup:AddButton({
     Tooltip     = 'Respawns your character'
 })
 
--- ATM (right)
+-- ── ATM (right) ───────────────────────────────────────────────────────────────
 local AtmGroup = Tabs.Main:AddRightGroupbox('ATM')
 
 local function getWallet()
@@ -210,7 +265,7 @@ local AtmRefreshConnection = game:GetService('RunService').Heartbeat:Connect(fun
     if (tick() % 3) < 0.016 then refreshBalances() end
 end)
 
--- VISUAL TAB
+-- ── VISUAL TAB ────────────────────────────────────────────────────────────────
 local VisualGroup = Tabs.Visual:AddLeftGroupbox('Visualization')
 
 VisualGroup:AddToggle('Esp', {
@@ -218,14 +273,7 @@ VisualGroup:AddToggle('Esp', {
     Default  = false,
     Tooltip  = 'Master switch — turn this on first',
     Callback = function(Value)
-        if not EspRework then return end
-        EspRework:SetEnabled(Value)
-        if Value then
-            EspRework:SetBox(Toggles.Box.Value)
-            EspRework:SetNames(Toggles.Names.Value)
-            EspRework:SetDistanceEnabled(Toggles.DistanceEnabled.Value)
-            EspRework:SetGlow(Toggles.GlowCharacter.Value)
-        end
+        if ESP then ESP:SetEnabled(Value) end
     end
 })
 
@@ -234,7 +282,7 @@ VisualGroup:AddToggle('Box', {
     Default  = false,
     Tooltip  = 'L-corner box around players',
     Callback = function(Value)
-        if EspRework then EspRework:SetBox(Value) end
+        if ESP then ESP:SetBox(Value) end
     end
 })
 
@@ -243,7 +291,7 @@ VisualGroup:AddToggle('Names', {
     Default  = false,
     Tooltip  = 'Display name above box',
     Callback = function(Value)
-        if EspRework then EspRework:SetNames(Value) end
+        if ESP then ESP:SetNames(Value) end
     end
 })
 
@@ -252,7 +300,7 @@ VisualGroup:AddToggle('DistanceEnabled', {
     Default  = false,
     Tooltip  = 'Stud distance below box',
     Callback = function(Value)
-        if EspRework then EspRework:SetDistanceEnabled(Value) end
+        if ESP then ESP:SetDistanceEnabled(Value) end
     end
 })
 
@@ -261,7 +309,7 @@ VisualGroup:AddToggle('GlowCharacter', {
     Default  = false,
     Tooltip  = 'Highlight glow on players',
     Callback = function(Value)
-        if EspRework then EspRework:SetGlow(Value) end
+        if ESP then ESP:SetGlow(Value) end
     end
 })
 
@@ -276,9 +324,7 @@ DistSliderDepBox:AddSlider('EspDistance', {
     Compact  = false,
     Tooltip  = '0 = unlimited',
     Callback = function(Value)
-        if EspRework then
-            EspRework:SetDistance(Value <= 0 and 1000000 or Value)
-        end
+        if ESP then ESP:SetDistance(Value) end
     end
 })
 
@@ -295,7 +341,7 @@ VisualGroup:AddToggle('FullBrightness', {
     end
 })
 
--- UI SETTINGS TAB
+-- ── UI SETTINGS TAB ───────────────────────────────────────────────────────────
 local MenuGroup = Tabs['UI Settings']:AddLeftGroupbox('Menu')
 
 MenuGroup:AddButton('Unload', function() Library:Unload() end)
@@ -328,12 +374,13 @@ end)
 Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     AtmRefreshConnection:Disconnect()
-    FlyCar:SetEnabled(false)
-    if EspRework then EspRework:SetEnabled(false) end
-    InfMag:SetEnabled(false)
-    InfAmmo:SetEnabled(false)
-    NoRecoil:SetEnabled(false)
-    RapidShoot:SetEnabled(false)
+    if FlyCar     then FlyCar:SetEnabled(false) end
+    if ESP        then ESP:SetEnabled(false) end
+    if Aimbot  then Aimbot:SetEnabled(false) end
+    if InfMag     then InfMag:SetEnabled(false) end
+    if InfAmmo    then InfAmmo:SetEnabled(false) end
+    if NoRecoil   then NoRecoil:SetEnabled(false) end
+    if RapidShoot then RapidShoot:SetEnabled(false) end
     Library.Unloaded = true
 end)
 
