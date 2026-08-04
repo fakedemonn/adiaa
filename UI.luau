@@ -6,7 +6,15 @@ local InfMag      = loadstring(game:HttpGet(featRepo .. 'Inf%20mag.luau'))()
 local InfAmmo     = loadstring(game:HttpGet(featRepo .. 'inf%20ammo%20reserves.luau'))()
 local NoRecoil    = loadstring(game:HttpGet(featRepo .. 'no%20recoil.luau'))()
 local RapidShoot  = loadstring(game:HttpGet(featRepo .. 'rapid%20shoot.luau'))()
-local EspRework   = loadstring(game:HttpGet(featRepo .. 'rapid%20ESPREWORK.luau'((()
+
+-- ESP module (renamed to ESP.luau). Wrapped in pcall so the UI still loads if the URL is wrong.
+local EspRework
+do
+    local ok, mod = pcall(function()
+        return loadstring(game:HttpGet(featRepo .. 'ESP.luau'))()
+    end)
+    EspRework = (ok and type(mod) == 'table') and mod or nil
+end
 
 local Library      = loadstring(game:HttpGet(repo .. 'Library.lua'))()
 local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
@@ -210,10 +218,14 @@ VisualGroup:AddToggle('Esp', {
     Default  = false,
     Tooltip  = 'Master switch — turn this on first',
     Callback = function(Value)
-        if EspBox      then EspBox:SetEnabled(Value and Toggles.Box.Value) end
-        if EspNames    then EspNames:SetEnabled(Value and Toggles.Names.Value) end
-        if EspDistance then EspDistance:SetEnabled(Value and Toggles.DistanceEnabled.Value) end
-        if EspGlow     then EspGlow:SetEnabled(Value and Toggles.GlowCharacter.Value) end
+        if not EspRework then return end
+        EspRework:SetEnabled(Value)
+        if Value then
+            EspRework:SetBox(Toggles.Box.Value)
+            EspRework:SetNames(Toggles.Names.Value)
+            EspRework:SetDistanceEnabled(Toggles.DistanceEnabled.Value)
+            EspRework:SetGlow(Toggles.GlowCharacter.Value)
+        end
     end
 })
 
@@ -222,7 +234,7 @@ VisualGroup:AddToggle('Box', {
     Default  = false,
     Tooltip  = 'L-corner box around players',
     Callback = function(Value)
-        if EspBox then EspBox:SetEnabled(Toggles.Esp.Value and Value) end
+        if EspRework then EspRework:SetBox(Value) end
     end
 })
 
@@ -231,7 +243,7 @@ VisualGroup:AddToggle('Names', {
     Default  = false,
     Tooltip  = 'Display name above box',
     Callback = function(Value)
-        if EspNames then EspNames:SetEnabled(Toggles.Esp.Value and Value) end
+        if EspRework then EspRework:SetNames(Value) end
     end
 })
 
@@ -240,7 +252,7 @@ VisualGroup:AddToggle('DistanceEnabled', {
     Default  = false,
     Tooltip  = 'Stud distance below box',
     Callback = function(Value)
-        if EspDistance then EspDistance:SetEnabled(Toggles.Esp.Value and Value) end
+        if EspRework then EspRework:SetDistanceEnabled(Value) end
     end
 })
 
@@ -249,7 +261,7 @@ VisualGroup:AddToggle('GlowCharacter', {
     Default  = false,
     Tooltip  = 'Highlight glow on players',
     Callback = function(Value)
-        if EspGlow then EspGlow:SetEnabled(Toggles.Esp.Value and Value) end
+        if EspRework then EspRework:SetGlow(Value) end
     end
 })
 
@@ -264,7 +276,9 @@ DistSliderDepBox:AddSlider('EspDistance', {
     Compact  = false,
     Tooltip  = '0 = unlimited',
     Callback = function(Value)
-        if EspDistance then EspDistance:SetMaxDistance(Value) end
+        if EspRework then
+            EspRework:SetDistance(Value <= 0 and 1000000 or Value)
+        end
     end
 })
 
@@ -315,10 +329,7 @@ Library:OnUnload(function()
     WatermarkConnection:Disconnect()
     AtmRefreshConnection:Disconnect()
     FlyCar:SetEnabled(false)
-    if EspBox      then EspBox:SetEnabled(false) end
-    if EspNames    then EspNames:SetEnabled(false) end
-    if EspDistance then EspDistance:SetEnabled(false) end
-    if EspGlow     then EspGlow:SetEnabled(false) end
+    if EspRework then EspRework:SetEnabled(false) end
     InfMag:SetEnabled(false)
     InfAmmo:SetEnabled(false)
     NoRecoil:SetEnabled(false)
@@ -339,4 +350,3 @@ SaveManager:BuildConfigSection(Tabs['UI Settings'])
 ThemeManager:ApplyToTab(Tabs['UI Settings'])
 
 SaveManager:LoadAutoloadConfig()
-
