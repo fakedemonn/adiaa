@@ -18,6 +18,7 @@ local enabled     = false
 local fov         = 120
 local circleCount = 1
 local bodyPart    = "Head"
+local teamCheck   = true
 local locked      = nil
 
 -- ── FOV rings ──────────────────────────────────────────────────────────────────
