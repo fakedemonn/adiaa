@@ -1,7 +1,8 @@
 -- [Roblox exploit | client-side | Luau]
--- Camera.CFrame __index spoof — game IK reads fake CFrame facing target,
--- positions arms + gun accordingly. Renderer bypasses __index at C++ level.
--- Player view never moves. Body pivot + raycast direction bend still run.
+-- Silent Aim — no camera movement.
+-- Character body rotates horizontally toward target (HRP pivot).
+-- Arm + gun pitch toward target via Motor6D.Transform override.
+-- Runs at RenderPriority.Last+1 — fires AFTER game animator. Our write wins.
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,7 +20,6 @@ local bodyPart    = "Head"
 local teamCheck   = true
 local turnSpeed   = 12
 local locked      = nil
-local fakingCam   = false   -- re-entrance guard for the camera spoof
 
 -- ── FOV ring pool ──────────────────────────────────────────────────────────────
 local fovCircles = {}
@@ -89,69 +89,7 @@ local function getTarget()
     return best
 end
 
--- ── Hook 1: Camera.CFrame __index spoof ───────────────────────────────────────
--- Game IK + gun scripts read Camera.CFrame in Lua → see fake CFrame facing target.
--- Renderer reads camera in C++ → __index never fires → real view untouched.
--- fakingCam guard prevents re-entrance when our own code reads Camera.CFrame.
-
-local camMT    = getrawmetatable(Camera)
-setreadonly(camMT, false)
-local oldCamMT = camMT.__index
-
-camMT.__index = newcclosure(function(self, key)
-    if enabled and locked and key == "CFrame" and self == Camera and not fakingCam then
-        local part = getAimPart(locked)
-        if part then
-            -- *the camera tells everyone it's looking at the target — it is not*
-            fakingCam = true
-            local realCF = oldCamMT(self, "CFrame")
-            fakingCam = false
-            return CFrame.lookAt(realCF.Position, part.Position)
-        end
-    end
-    return oldCamMT(self, key)
-end)
-
-setreadonly(camMT, true)
-
--- ── Hook 2: workspace:Raycast — direction bend ────────────────────────────────
--- Belt-and-suspenders on top of the CFrame spoof.
--- If the game pre-computed direction before our __index fired, this catches it.
-local oldRaycast = workspace.Raycast
-hookfunction(oldRaycast, newcclosure(function(ws, origin, direction, params)
-    if enabled and locked then
-        local part = getAimPart(locked)
-        if part then
-            direction = (part.Position - origin).Unit * direction.Magnitude
-        end
-    end
-    return oldRaycast(ws, origin, direction, params)
-end))
-
--- ── Hook 3: legacy ray APIs ───────────────────────────────────────────────────
-local oldFindRay = workspace.FindPartOnRay
-hookfunction(oldFindRay, newcclosure(function(ws, ray, ...)
-    if enabled and locked then
-        local part = getAimPart(locked)
-        if part then
-            ray = Ray.new(ray.Origin, (part.Position - ray.Origin).Unit * ray.Direction.Magnitude)
-        end
-    end
-    return oldFindRay(ws, ray, ...)
-end))
-
-local oldFindRayIL = workspace.FindPartOnRayWithIgnoreList
-hookfunction(oldFindRayIL, newcclosure(function(ws, ray, list, ...)
-    if enabled and locked then
-        local part = getAimPart(locked)
-        if part then
-            ray = Ray.new(ray.Origin, (part.Position - ray.Origin).Unit * ray.Direction.Magnitude)
-        end
-    end
-    return oldFindRayIL(ws, ray, list, ...)
-end))
-
--- ── Hook 4: Mouse.__index ─────────────────────────────────────────────────────
+-- ── Mouse hook ─────────────────────────────────────────────────────────────────
 local mouseMT    = getrawmetatable(mouse)
 setreadonly(mouseMT, false)
 local oldMouseMT = mouseMT.__index
@@ -160,10 +98,7 @@ mouseMT.__index = newcclosure(function(self, key)
     if enabled and locked and (key == "Hit" or key == "UnitRay") then
         local part = getAimPart(locked)
         if part then
-            -- use real cam position, not spoofed CFrame
-            fakingCam = true
-            local camPos = oldCamMT(Camera, "CFrame").Position
-            fakingCam = false
+            local camPos = Camera.CFrame.Position
             if key == "Hit" then
                 return CFrame.new(part.Position)
             else
@@ -176,7 +111,62 @@ end)
 
 setreadonly(mouseMT, true)
 
--- ── Main loop ─────────────────────────────────────────────────────────────────
+-- ── Raycast hook ───────────────────────────────────────────────────────────────
+local oldRaycast = workspace.Raycast
+hookfunction(oldRaycast, newcclosure(function(ws, origin, direction, params)
+    if enabled and locked then
+        local part = getAimPart(locked)
+        if part then
+            direction = (part.Position - origin).Unit * direction.Magnitude
+        end
+    end
+    return oldRaycast(ws, origin, direction, params)
+end))
+
+-- ── Arm pivot via Motor6D.Transform ───────────────────────────────────────────
+-- Runs at RenderPriority.Last + 1 = after game's animator writes Transform.
+-- Overrides Waist and RightShoulder to pitch the arm toward the locked target.
+--
+-- If the arm swings the WRONG direction, flip the sign on rShoulder pitch line.
+-- If it over/under-rotates, adjust the 0.35 / 1.0 multipliers.
+
+local function aimArm(targetPos)
+    local char = lp.Character
+    if not char then return end
+
+    local root   = char:FindFirstChild("HumanoidRootPart")
+    local lTorso = char:FindFirstChild("LowerTorso")
+    local uTorso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
+    if not root or not uTorso then return end
+
+    -- pitch angle: how far above/below the root is the target
+    local toTarget = targetPos - root.Position
+    local hDist    = math.sqrt(toTarget.X ^ 2 + toTarget.Z ^ 2)
+    local pitch    = math.atan2(toTarget.Y, hDist)  -- positive = target is above
+
+    -- Waist: upper-body tilts partially toward target elevation
+    local waist = lTorso and lTorso:FindFirstChild("Waist")
+    if waist then
+        -- *upper body leans into the shot — waist carries 35% of the pitch*
+        waist.Transform = CFrame.Angles(-pitch * 0.35, 0, 0)
+    end
+
+    -- RightShoulder: arm raises or lowers to match target pitch
+    -- Negative sign: R15 arm needs to go up when target is above (Z-axis on shoulder)
+    local rShoulder = uTorso:FindFirstChild("RightShoulder")
+    if rShoulder then
+        -- *the arm swings like it knows exactly where the head is*
+        rShoulder.Transform = CFrame.Angles(0, 0, -pitch)
+    end
+
+    -- Neck: head tilts naturally toward target (subtle, looks less robotic)
+    local neck = uTorso:FindFirstChild("Neck")
+    if neck then
+        neck.Transform = CFrame.Angles(-pitch * 0.5, 0, 0)
+    end
+end
+
+-- ── Main loop — body + FOV rings ───────────────────────────────────────────────
 RunService.RenderStepped:Connect(function(dt)
     local cursor = UIS:GetMouseLocation()
     for _, c in ipairs(fovCircles) do
@@ -200,18 +190,18 @@ RunService.RenderStepped:Connect(function(dt)
 
     local targetPos = part.Position
 
-    -- HRP horizontal pivot — server-side hit validation from character facing
+    -- HRP horizontal pivot — body faces target, camera stays yours
     local char = lp.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if root then
-        local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
+        local flat = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
         root.CFrame = root.CFrame:Lerp(
-            CFrame.lookAt(root.Position, flatTarget),
+            CFrame.lookAt(root.Position, flat),
             math.min(dt * turnSpeed, 1)
         )
     end
 
-    -- red pip on locked part
+    -- lock dot on screen
     local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
@@ -221,11 +211,25 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
+-- Arm Motor6D step — runs AFTER game animator, wins the write
+RunService:BindToRenderStep(
+    "SilentAimArm",
+    Enum.RenderPriority.Last.Value + 1,
+    function()
+        if not enabled or not locked then return end
+        local part = getAimPart(locked)
+        if part then aimArm(part.Position) end
+    end
+)
+
 -- ── Public API ─────────────────────────────────────────────────────────────────
 function M:SetEnabled(v)
     enabled = v
     for _, c in ipairs(fovCircles) do c.Visible = v end
-    if not v then lockDot.Visible = false; locked = nil end
+    if not v then
+        lockDot.Visible = false
+        locked = nil
+    end
 end
 
 function M:SetFOV(v)
@@ -252,16 +256,13 @@ end
 
 function M:Destroy()
     enabled = false
+    RunService:UnbindFromRenderStep("SilentAimArm")
     for _, c in ipairs(fovCircles) do c:Remove() end
     fovCircles = {}
     lockDot:Remove()
-    setreadonly(camMT, false)
-    camMT.__index = oldCamMT
-    setreadonly(camMT, true)
     setreadonly(mouseMT, false)
     mouseMT.__index = oldMouseMT
     setreadonly(mouseMT, true)
 end
 
 return M
-
