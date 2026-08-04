@@ -11,7 +11,6 @@ local M         = {}
 local enabled   = false
 local fov       = 120
 local bodyPart  = "Head"
-local teamCheck = true
 local smoothing = 0.15
 local locked    = nil
 
@@ -25,7 +24,6 @@ fovCircle.Filled       = false
 fovCircle.NumSides     = 64
 fovCircle.Position     = Camera.ViewportSize / 2
 
--- Lock dot — shows who's locked
 local lockDot          = Drawing.new("Circle")
 lockDot.Visible        = false
 lockDot.Radius         = 4
@@ -35,17 +33,9 @@ lockDot.Filled         = true
 lockDot.NumSides       = 32
 lockDot.Position       = Camera.ViewportSize / 2
 
--- ── UTILS ────────────────────────────────────────────────────────────────────
+-- ── UTILS ─────────────────────────────────────────────────────────────────────
 local function isEnemy(player)
-    if player == lp then return false end
-    if not teamCheck then return true end
-    if lp.Team and player.Team then
-        return lp.Team ~= player.Team
-    end
-    if lp.TeamColor and player.TeamColor then
-        return lp.TeamColor ~= player.TeamColor
-    end
-    return true
+    return player ~= lp  -- everyone is a target. no mercy, no teammates.
 end
 
 local function getAimPart(player)
@@ -156,12 +146,10 @@ RunService.RenderStepped:Connect(function(dt)
     local targetPos = part.Position
     local origin    = Camera.CFrame.Position
 
-    -- Camera lock toward target
     -- *server validates from camera direction. this is what makes the hit count.*
     local targetCF = CFrame.lookAt(origin, targetPos)
     Camera.CFrame  = Camera.CFrame:Lerp(targetCF, math.min(dt / smoothing, 1))
 
-    -- Character body faces target (3rd person / shift lock)
     -- *body turns. shift lock follows. shot registers from real character facing.*
     local char = lp.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -171,7 +159,6 @@ RunService.RenderStepped:Connect(function(dt)
         root.CFrame      = root.CFrame:Lerp(faceCF, math.min(dt * 12, 1))
     end
 
-    -- Lock dot on target
     local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
@@ -202,10 +189,6 @@ end
 
 function M:SetBodyPart(v)
     bodyPart = v == "Torso" and "Torso" or "Head"
-end
-
-function M:SetTeamCheck(v)
-    teamCheck = v
 end
 
 function M:Destroy()
