@@ -1,24 +1,30 @@
--- [Context: Silent Aim | Camera rotation method | No remote hook | Volt]
--- *camera moves to target. server sees a real aim. hit counts.*
+-- [Context: Silent Aim | Camera rotation + FOV circle | Volt]
+-- *camera moves to target. FOV ring shows the lock radius.*
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UIS        = game:GetService("UserInputService")
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
 local localPlayer = Players.LocalPlayer
-local camera     = workspace.CurrentCamera
+local camera      = workspace.CurrentCamera
 
--- ── CONFIG ───────────────────────────────────────────────────────────────────
 local CFG = {
-    Enabled         = false,
-    FOVRadius       = 120,       -- pixels from screen center
-    Smoothing       = 0.15,      -- 0.05 = near instant | 0.3 = smooth
-    MaxDistance     = 2500,      -- studs
-    MaxRedirectAngle = 89,       -- degrees max camera rotation per shot
-    TeamCheck       = true,
+    Enabled          = false,
+    FOVRadius        = 120,
+    Smoothing        = 0.15,
+    MaxDistance      = 2500,
+    MaxRedirectAngle = 89,
+    TeamCheck        = true,
 }
 
 local AIM_PRIORITY = {"Head", "UpperTorso", "HumanoidRootPart"}
--- ─────────────────────────────────────────────────────────────────────────────
+
+-- ── FOV CIRCLE ────────────────────────────────────────────────────────────────
+local FOVCircle        = Drawing.new("Circle")
+FOVCircle.Visible      = false
+FOVCircle.Color        = Color3.fromRGB(255, 255, 255)
+FOVCircle.Thickness    = 1
+FOVCircle.Filled       = false
+FOVCircle.Transparency = 1
+FOVCircle.Radius       = CFG.FOVRadius
 
 -- ── TEAM CHECK ───────────────────────────────────────────────────────────────
 local function isEnemy(player)
@@ -45,7 +51,7 @@ local function screenCenter()
     return Vector2.new(vp.X / 2, vp.Y / 2)
 end
 
--- ── GET NEAREST TARGET IN FOV ────────────────────────────────────────────────
+-- ── GET NEAREST TARGET ───────────────────────────────────────────────────────
 local function getNearestTarget()
     local center   = screenCenter()
     local bestPart = nil
@@ -61,17 +67,13 @@ local function getNearestTarget()
         local worldDist = (char:GetPivot().Position - camera.CFrame.Position).Magnitude
         if worldDist > CFG.MaxDistance then continue end
 
-        -- Walk priority list — head first
         local committed = nil
         for _, partName in ipairs(AIM_PRIORITY) do
             local part = char:FindFirstChild(partName)
             if not part then continue end
-
             local sp, onScreen = w2s(part.Position)
             if not onScreen then continue end
-
-            local screenDist = (sp - center).Magnitude
-            if screenDist <= CFG.FOVRadius then
+            if (sp - center).Magnitude <= CFG.FOVRadius then
                 committed = part
                 break
             end
@@ -92,10 +94,14 @@ local function getNearestTarget()
     return bestPart
 end
 
--- ── AIM LOOP ─────────────────────────────────────────────────────────────────
--- Runs every RenderStepped — rotates camera toward target smoothly
--- *camera lerps. target fills crosshair. shot fires. server confirms.*
+-- ── RENDER LOOP ───────────────────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function(dt)
+    local center = screenCenter()
+
+    -- FOV circle always at screen center when enabled
+    FOVCircle.Position = center
+    FOVCircle.Visible  = CFG.Enabled
+
     if not CFG.Enabled then return end
 
     local target = getNearestTarget()
@@ -104,7 +110,6 @@ RunService.RenderStepped:Connect(function(dt)
     local origin    = camera.CFrame.Position
     local targetPos = target.Position
 
-    -- Angle check — don't rotate more than MaxRedirectAngle
     local currentLook = camera.CFrame.LookVector
     local desiredLook = (targetPos - origin).Unit
     local dot         = math.clamp(currentLook:Dot(desiredLook), -1, 1)
@@ -112,7 +117,7 @@ RunService.RenderStepped:Connect(function(dt)
 
     if angleDeg > CFG.MaxRedirectAngle then return end
 
-    -- Smooth camera lerp toward target
+    -- *camera lerps toward target. server sees real aim. hit counts.*
     local targetCF = CFrame.lookAt(origin, targetPos)
     camera.CFrame  = camera.CFrame:Lerp(targetCF, math.min(dt / CFG.Smoothing, 1))
 end)
@@ -120,25 +125,24 @@ end)
 -- ── PUBLIC API ────────────────────────────────────────────────────────────────
 return {
     SetEnabled = function(_, value)
-        CFG.Enabled = value
+        CFG.Enabled       = value
+        FOVCircle.Visible = value
     end,
 
     SetFOV = function(_, value)
-        CFG.FOVRadius = value
+        CFG.FOVRadius  = value
+        FOVCircle.Radius = value
     end,
 
     SetSmoothing = function(_, value)
-        -- slider 1-100 → smoothing 0.3-0.05
         CFG.Smoothing = 0.3 - ((value - 1) / 99) * 0.25
     end,
 
     SetBodyPart = function(_, value)
         if value == "Head" then
             AIM_PRIORITY = {"Head", "UpperTorso", "HumanoidRootPart"}
-        elseif value == "Upper Body" then
+        elseif value == "Torso" then
             AIM_PRIORITY = {"UpperTorso", "Torso", "HumanoidRootPart"}
-        elseif value == "Legs" then
-            AIM_PRIORITY = {"LeftUpperLeg", "RightUpperLeg", "HumanoidRootPart"}
         end
     end,
 
