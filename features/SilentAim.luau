@@ -1,30 +1,51 @@
--- [Context: Silent Aim v3 | Cursor-tracked FOV | No camera lock | Character faces, camera roams]
--- *circle hugs the cursor. enemy steps inside. body pivots. camera stays yours. pull.*
+-- [Roblox exploit | client-side | Luau]
+-- UIS:GetMouseLocation() = true screen coords. no GuiInset gap. circle sits on crosshair.
+-- Hooks: workspace:Raycast + Mouse.__index. Camera untouched. Character pivots to register hits.
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UIS        = game:GetService("UserInputService")
 local Camera     = workspace.CurrentCamera
 local lp         = Players.LocalPlayer
 local mouse      = lp:GetMouse()
 
-local M          = {}
-local enabled    = false
-local fov        = 120
-local bodyPart   = "Head"
-local turnSpeed  = 12        -- controlled by SetSmoothing; higher = snappier body pivot
-local locked     = nil
+-- ── State ──────────────────────────────────────────────────────────────────────
+local M           = {}
+local enabled     = false
+local fov         = 120
+local circleCount = 1
+local bodyPart    = "Head"
+local teamCheck   = true
+local turnSpeed   = 12      -- SetSmoothing drives this
+local locked      = nil
 
--- ── FOV CIRCLE — lives on the cursor ─────────────────────────────────────────
-local fovCircle       = Drawing.new("Circle")
-fovCircle.Visible     = false
-fovCircle.Radius      = fov
-fovCircle.Thickness   = 1
-fovCircle.Color       = Color3.fromRGB(255, 255, 255)
-fovCircle.Filled      = false
-fovCircle.NumSides    = 64
-fovCircle.Position    = Vector2.new(mouse.X, mouse.Y)
+-- ── FOV ring pool ──────────────────────────────────────────────────────────────
+-- rings sit on the actual crosshair via UIS:GetMouseLocation()
+-- ring[i].Radius = fov * i / circleCount — outermost always at fov boundary
 
--- Lock dot — red pip that sits on the locked part in screen space
+local fovCircles = {}
+
+local function buildCircles()
+    -- *tear down before rebuild — orphaned Drawing objects bleed into the frame buffer*
+    for _, c in ipairs(fovCircles) do c:Remove() end
+    fovCircles = {}
+    local cursor = UIS:GetMouseLocation()
+    for i = 1, circleCount do
+        local c       = Drawing.new("Circle")
+        c.Visible     = enabled
+        c.Radius      = fov * i / circleCount
+        c.Thickness   = 1
+        c.Color       = Color3.fromRGB(255, 255, 255)
+        c.Filled      = false
+        c.NumSides    = 64
+        c.Position    = cursor
+        fovCircles[i] = c
+    end
+end
+
+buildCircles()
+
+-- Red pip on the locked target
 local lockDot         = Drawing.new("Circle")
 lockDot.Visible       = false
 lockDot.Radius        = 4
@@ -32,11 +53,24 @@ lockDot.Thickness     = 1
 lockDot.Color         = Color3.fromRGB(255, 50, 50)
 lockDot.Filled        = true
 lockDot.NumSides      = 32
-lockDot.Position      = Vector2.new(mouse.X, mouse.Y)
+lockDot.Position      = UIS:GetMouseLocation()
 
--- ── UTILS ─────────────────────────────────────────────────────────────────────
+-- ── Helpers ────────────────────────────────────────────────────────────────────
+-- UIS:GetMouseLocation() → true screen position, no GuiInset offset
+-- mouse.X/Y             → 58px off in LockCenter games, never use for Drawing
+local function getCursor()
+    return UIS:GetMouseLocation()
+end
+
 local function isEnemy(player)
-    return player ~= lp  -- no mercy. no teammates. everyone is a target.
+    -- *respect the flag only if teamCheck is on*
+    if player == lp then return false end
+    if teamCheck then
+        if player.Team ~= nil and lp.Team ~= nil and player.Team == lp.Team then
+            return false
+        end
+    end
+    return true
 end
 
 local function getAimPart(player)
@@ -53,15 +87,11 @@ local function getAimPart(player)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function getCursor()
-    return Vector2.new(mouse.X, mouse.Y)
-end
-
--- ── TARGET RESOLUTION — measured from cursor, not screen center ───────────────
 local function getTarget()
+    -- *measures screen distance from cursor — in LockCenter games cursor == crosshair*
     local cursor  = getCursor()
     local best    = nil
-    local minDist = fov   -- anything outside the FOV radius is ignored
+    local minDist = fov
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) then continue end
@@ -82,21 +112,23 @@ local function getTarget()
     return best
 end
 
--- ── RAYCAST HOOK — bends the bullet toward locked part ───────────────────────
--- *workspace.Raycast is what the gun actually fires. intercept here, aim there.*
+-- ── Hook 1: workspace:Raycast ──────────────────────────────────────────────────
+-- Origin and magnitude preserved. Only direction unit vector rotated toward locked target.
 local oldRaycast = workspace.Raycast
 hookfunction(oldRaycast, newcclosure(function(ws, origin, direction, params)
     if enabled and locked then
         local part = getAimPart(locked)
         if part then
+            -- *barrel still thinks it fired straight — direction just quietly changed*
             direction = (part.Position - origin).Unit * direction.Magnitude
         end
     end
     return oldRaycast(ws, origin, direction, params)
 end))
 
--- ── MOUSE HOOK — Hit and UnitRay both point at the locked part ────────────────
--- *gun reads mouse.Hit to know where to shoot. we lie to the gun.*
+-- ── Hook 2: Mouse.__index ──────────────────────────────────────────────────────
+-- Games reading mouse.Hit.Position or mouse.UnitRay to build shot direction
+-- get a fake value pointing at the locked target. Everything else falls through.
 local mt       = getrawmetatable(mouse)
 setreadonly(mt, false)
 local oldIndex = mt.__index
@@ -105,6 +137,7 @@ mt.__index = newcclosure(function(self, key)
     if enabled and locked and (key == "Hit" or key == "UnitRay") then
         local part = getAimPart(locked)
         if part then
+            -- *mouse thinks it's pointing at the wall*
             local camPos   = Camera.CFrame.Position
             local toTarget = (part.Position - camPos).Unit
             if key == "Hit" then
@@ -119,13 +152,15 @@ end)
 
 setreadonly(mt, true)
 
--- ── MAIN LOOP ─────────────────────────────────────────────────────────────────
+-- ── Main loop ─────────────────────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function(dt)
     local cursor = getCursor()
 
-    -- FOV circle trails the cursor every frame
-    fovCircle.Position = cursor
-    fovCircle.Visible  = enabled
+    -- anchor every ring to crosshair
+    for _, c in ipairs(fovCircles) do
+        c.Position = cursor
+        c.Visible  = enabled
+    end
 
     if not enabled then
         lockDot.Visible = false
@@ -149,9 +184,8 @@ RunService.RenderStepped:Connect(function(dt)
 
     local targetPos = part.Position
 
-    -- Camera is completely untouched — player owns their view the whole time.
-    -- Character body pivots to face the target flat on Y axis.
-    -- *body turns. shift lock syncs. server reads facing on bullet cast. hit registers.*
+    -- character body pivots flat on Y to face target
+    -- server reads facing on bullet cast — registers hits on games that validate from character direction
     local char = lp.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if root then
@@ -160,7 +194,7 @@ RunService.RenderStepped:Connect(function(dt)
         root.CFrame      = root.CFrame:Lerp(faceCF, math.min(dt * turnSpeed, 1))
     end
 
-    -- Red pip on the locked part's screen position
+    -- red pip follows the locked part in screen space
     local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
@@ -170,10 +204,10 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- ── PUBLIC API ────────────────────────────────────────────────────────────────
+-- ── Public API ─────────────────────────────────────────────────────────────────
 function M:SetEnabled(v)
-    enabled           = v
-    fovCircle.Visible = v
+    enabled = v
+    for _, c in ipairs(fovCircles) do c.Visible = v end
     if not v then
         lockDot.Visible = false
         locked = nil
@@ -181,12 +215,18 @@ function M:SetEnabled(v)
 end
 
 function M:SetFOV(v)
-    fov              = v
-    fovCircle.Radius = v
+    fov = v
+    for i, c in ipairs(fovCircles) do
+        c.Radius = fov * i / circleCount
+    end
 end
 
--- Smoothing slider now drives body turn speed.
--- slider 1  → turnSpeed ~4  (slow, gradual pivot)
+function M:SetCircleCount(v)
+    circleCount = v
+    buildCircles()
+end
+
+-- slider 1 → turnSpeed ~4 (slow lazy pivot)
 -- slider 100 → turnSpeed ~20 (near-instant snap)
 function M:SetSmoothing(v)
     turnSpeed = 4 + ((v - 1) / 99) * 16
@@ -196,9 +236,14 @@ function M:SetBodyPart(v)
     bodyPart = v == "Torso" and "Torso" or "Head"
 end
 
+function M:SetTeamCheck(v)
+    teamCheck = v
+end
+
 function M:Destroy()
     enabled = false
-    fovCircle:Remove()
+    for _, c in ipairs(fovCircles) do c:Remove() end
+    fovCircles = {}
     lockDot:Remove()
     setreadonly(mt, false)
     mt.__index = oldIndex
