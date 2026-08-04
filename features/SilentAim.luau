@@ -1,41 +1,42 @@
--- [Context: Silent Aim v3 | 3rd person / shift lock | Auto-lock, no auto-fire]
--- *enemy enters fov. character turns. camera locks. you pull the trigger.*
+-- [Context: Silent Aim v3 | Cursor-tracked FOV | No camera lock | Character faces, camera roams]
+-- *circle hugs the cursor. enemy steps inside. body pivots. camera stays yours. pull.*
 
-local Players     = game:GetService("Players")
-local RunService  = game:GetService("RunService")
-local Camera      = workspace.CurrentCamera
-local lp          = Players.LocalPlayer
-local mouse       = lp:GetMouse()
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera     = workspace.CurrentCamera
+local lp         = Players.LocalPlayer
+local mouse      = lp:GetMouse()
 
-local M         = {}
-local enabled   = false
-local fov       = 120
-local bodyPart  = "Head"
-local smoothing = 0.15
-local locked    = nil
+local M          = {}
+local enabled    = false
+local fov        = 120
+local bodyPart   = "Head"
+local turnSpeed  = 12        -- controlled by SetSmoothing; higher = snappier body pivot
+local locked     = nil
 
--- ── FOV CIRCLE ────────────────────────────────────────────────────────────────
-local fovCircle        = Drawing.new("Circle")
-fovCircle.Visible      = false
-fovCircle.Radius       = fov
-fovCircle.Thickness    = 1
-fovCircle.Color        = Color3.fromRGB(255, 255, 255)
-fovCircle.Filled       = false
-fovCircle.NumSides     = 64
-fovCircle.Position     = Camera.ViewportSize / 2
+-- ── FOV CIRCLE — lives on the cursor ─────────────────────────────────────────
+local fovCircle       = Drawing.new("Circle")
+fovCircle.Visible     = false
+fovCircle.Radius      = fov
+fovCircle.Thickness   = 1
+fovCircle.Color       = Color3.fromRGB(255, 255, 255)
+fovCircle.Filled      = false
+fovCircle.NumSides    = 64
+fovCircle.Position    = Vector2.new(mouse.X, mouse.Y)
 
-local lockDot          = Drawing.new("Circle")
-lockDot.Visible        = false
-lockDot.Radius         = 4
-lockDot.Thickness      = 1
-lockDot.Color          = Color3.fromRGB(255, 50, 50)
-lockDot.Filled         = true
-lockDot.NumSides       = 32
-lockDot.Position       = Camera.ViewportSize / 2
+-- Lock dot — red pip that sits on the locked part in screen space
+local lockDot         = Drawing.new("Circle")
+lockDot.Visible       = false
+lockDot.Radius        = 4
+lockDot.Thickness     = 1
+lockDot.Color         = Color3.fromRGB(255, 50, 50)
+lockDot.Filled        = true
+lockDot.NumSides      = 32
+lockDot.Position      = Vector2.new(mouse.X, mouse.Y)
 
 -- ── UTILS ─────────────────────────────────────────────────────────────────────
 local function isEnemy(player)
-    return player ~= lp  -- everyone is a target. no mercy, no teammates.
+    return player ~= lp  -- no mercy. no teammates. everyone is a target.
 end
 
 local function getAimPart(player)
@@ -52,15 +53,15 @@ local function getAimPart(player)
     return char:FindFirstChild("HumanoidRootPart")
 end
 
-local function screenCenter()
-    return Camera.ViewportSize / 2
+local function getCursor()
+    return Vector2.new(mouse.X, mouse.Y)
 end
 
--- ── TARGET RESOLUTION ────────────────────────────────────────────────────────
+-- ── TARGET RESOLUTION — measured from cursor, not screen center ───────────────
 local function getTarget()
-    local center  = screenCenter()
+    local cursor  = getCursor()
     local best    = nil
-    local minDist = fov
+    local minDist = fov   -- anything outside the FOV radius is ignored
 
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) then continue end
@@ -71,7 +72,7 @@ local function getTarget()
         if not part then continue end
         local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
         if not onScreen then continue end
-        local d = (Vector2.new(sp.X, sp.Y) - center).Magnitude
+        local d = (Vector2.new(sp.X, sp.Y) - cursor).Magnitude
         if d < minDist then
             minDist = d
             best    = player
@@ -81,7 +82,8 @@ local function getTarget()
     return best
 end
 
--- ── RAYCAST HOOK ─────────────────────────────────────────────────────────────
+-- ── RAYCAST HOOK — bends the bullet toward locked part ───────────────────────
+-- *workspace.Raycast is what the gun actually fires. intercept here, aim there.*
 local oldRaycast = workspace.Raycast
 hookfunction(oldRaycast, newcclosure(function(ws, origin, direction, params)
     if enabled and locked then
@@ -93,7 +95,8 @@ hookfunction(oldRaycast, newcclosure(function(ws, origin, direction, params)
     return oldRaycast(ws, origin, direction, params)
 end))
 
--- ── MOUSE HOOK ───────────────────────────────────────────────────────────────
+-- ── MOUSE HOOK — Hit and UnitRay both point at the locked part ────────────────
+-- *gun reads mouse.Hit to know where to shoot. we lie to the gun.*
 local mt       = getrawmetatable(mouse)
 setreadonly(mt, false)
 local oldIndex = mt.__index
@@ -118,9 +121,10 @@ setreadonly(mt, true)
 
 -- ── MAIN LOOP ─────────────────────────────────────────────────────────────────
 RunService.RenderStepped:Connect(function(dt)
-    local center = screenCenter()
+    local cursor = getCursor()
 
-    fovCircle.Position = center
+    -- FOV circle trails the cursor every frame
+    fovCircle.Position = cursor
     fovCircle.Visible  = enabled
 
     if not enabled then
@@ -144,21 +148,19 @@ RunService.RenderStepped:Connect(function(dt)
     end
 
     local targetPos = part.Position
-    local origin    = Camera.CFrame.Position
 
-    -- *server validates from camera direction. this is what makes the hit count.*
-    local targetCF = CFrame.lookAt(origin, targetPos)
-    Camera.CFrame  = Camera.CFrame:Lerp(targetCF, math.min(dt / smoothing, 1))
-
-    -- *body turns. shift lock follows. shot registers from real character facing.*
+    -- Camera is completely untouched — player owns their view the whole time.
+    -- Character body pivots to face the target flat on Y axis.
+    -- *body turns. shift lock syncs. server reads facing on bullet cast. hit registers.*
     local char = lp.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if root then
         local flatTarget = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
         local faceCF     = CFrame.lookAt(root.Position, flatTarget)
-        root.CFrame      = root.CFrame:Lerp(faceCF, math.min(dt * 12, 1))
+        root.CFrame      = root.CFrame:Lerp(faceCF, math.min(dt * turnSpeed, 1))
     end
 
+    -- Red pip on the locked part's screen position
     local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
@@ -183,8 +185,11 @@ function M:SetFOV(v)
     fovCircle.Radius = v
 end
 
+-- Smoothing slider now drives body turn speed.
+-- slider 1  → turnSpeed ~4  (slow, gradual pivot)
+-- slider 100 → turnSpeed ~20 (near-instant snap)
 function M:SetSmoothing(v)
-    smoothing = 0.3 - ((v - 1) / 99) * 0.25
+    turnSpeed = 4 + ((v - 1) / 99) * 16
 end
 
 function M:SetBodyPart(v)
