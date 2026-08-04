@@ -1,8 +1,9 @@
 -- [Roblox exploit | client-side | Luau]
--- Silent Aim v3 — crash-safe, third-person / shift-lock.
--- Three hooks: Camera.__namecall, workspace.__namecall, Mouse.__index
--- Body pivot via Heartbeat (after physics — no animator conflict)
--- aimArm / Motor6D.Transform removed — was racing the animator and crashing
+-- Silent Aim v4 — no CFrame writes, no Camera hook.
+-- Crash source 1: root.CFrame lerp in Heartbeat — removed entirely.
+-- Crash source 2: Camera.__namecall fires on internal engine calls — removed.
+-- What remains: workspace.__namecall + Mouse.__index + Drawing only.
+-- Both hooks redirect bullet direction without touching physics state.
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -18,7 +19,6 @@ local fov         = 120
 local circleCount = 1
 local bodyPart    = "Head"
 local teamCheck   = true
-local turnSpeed   = 12
 local locked      = nil
 
 -- ── FOV rings ──────────────────────────────────────────────────────────────────
@@ -43,20 +43,23 @@ end
 
 buildCircles()
 
-local lockDot           = Drawing.new("Circle")
-lockDot.Visible         = false
-lockDot.Radius          = 4
-lockDot.Thickness       = 1
-lockDot.Color           = Color3.fromRGB(255, 50, 50)
-lockDot.Filled          = true
-lockDot.NumSides        = 32
-lockDot.Position        = UIS:GetMouseLocation()
+local lockDot         = Drawing.new("Circle")
+lockDot.Visible       = false
+lockDot.Radius        = 4
+lockDot.Thickness     = 1
+lockDot.Color         = Color3.fromRGB(255, 50, 50)
+lockDot.Filled        = true
+lockDot.NumSides      = 32
+lockDot.Position      = UIS:GetMouseLocation()
 
 -- ── Helpers ────────────────────────────────────────────────────────────────────
 local function isEnemy(player)
     if player == lp then return false end
-    if teamCheck and player.Team ~= nil and lp.Team ~= nil
-        and player.Team == lp.Team then return false end
+    if teamCheck
+        and player.Team ~= nil
+        and lp.Team     ~= nil
+        and player.Team == lp.Team
+    then return false end
     return true
 end
 
@@ -73,7 +76,7 @@ local function getAimPart(player)
 end
 
 local function getTarget()
-    local cursor       = UIS:GetMouseLocation()
+    local cursor        = UIS:GetMouseLocation()
     local best, minDist = nil, fov
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) then continue end
@@ -90,70 +93,42 @@ local function getTarget()
     return best
 end
 
--- ── Hook 1: Camera __namecall — ScreenPointToRay / ViewportPointToRay ─────────
--- Most games compute bullet direction here, not at Raycast level.
--- __namecall fires even when the game cached the Camera reference before our hook.
-
-local camMT    = getrawmetatable(Camera)
-setreadonly(camMT, false)
-local oldCamNC = camMT.__namecall
-
-camMT.__namecall = newcclosure(function(self, ...)
-    local ok, method = pcall(getnamecallmethod)
-    if not ok then return oldCamNC(self, ...) end
-
-    if enabled and locked and self == Camera
-        and (method == "ScreenPointToRay" or method == "ViewportPointToRay")
-    then
-        local part = getAimPart(locked)
-        if part then
-            -- *camera reports a ray toward the target — cursor position is ignored*
-            local origin = self.CFrame.Position
-            local dir    = (part.Position - origin).Unit
-            return Ray.new(origin, dir)
-        end
-    end
-
-    return oldCamNC(self, ...)
-end)
-
-setreadonly(camMT, true)
-
--- ── Hook 2: workspace __namecall — Raycast + FindPartOnRay family ─────────────
--- Catches cached workspace refs that bypassed a hookfunction patch.
--- Magnitude preserved so server-side range checks don't flag the shot.
+-- ── Hook 1: workspace __namecall ───────────────────────────────────────────────
+-- Catches workspace:Raycast(), FindPartOnRay, FindPartOnRayWithIgnoreList.
+-- Fires even on cached workspace refs the game grabbed before this hook ran.
+-- NO Camera hook — fires on internal engine calls too and causes crashes.
 
 local wsMT    = getrawmetatable(workspace)
 setreadonly(wsMT, false)
 local oldWsNC = wsMT.__namecall
 
 wsMT.__namecall = newcclosure(function(self, ...)
-    local ok, method = pcall(getnamecallmethod)
-    if not ok then return oldWsNC(self, ...) end
+    local method = getnamecallmethod()
 
     if enabled and locked then
         local part = getAimPart(locked)
         if part then
+
             if method == "Raycast" then
                 local origin, direction, params = ...
                 if origin and direction then
-                    -- *direction bends silently; origin and magnitude stay honest*
-                    local newDir = (part.Position - origin).Unit * direction.Magnitude
-                    return oldWsNC(self, origin, newDir, params)
+                    -- *direction bends at hook level — no physics state touched*
+                    local bent = (part.Position - origin).Unit * direction.Magnitude
+                    return oldWsNC(self, origin, bent, params)
                 end
 
             elseif method == "FindPartOnRay" then
                 local ray, a, b, c = ...
                 if ray then
-                    local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
-                    return oldWsNC(self, Ray.new(ray.Origin, newDir), a, b, c)
+                    local bent = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
+                    return oldWsNC(self, Ray.new(ray.Origin, bent), a, b, c)
                 end
 
             elseif method == "FindPartOnRayWithIgnoreList" then
                 local ray, list, a, b = ...
                 if ray then
-                    local newDir = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
-                    return oldWsNC(self, Ray.new(ray.Origin, newDir), list, a, b)
+                    local bent = (part.Position - ray.Origin).Unit * ray.Direction.Magnitude
+                    return oldWsNC(self, Ray.new(ray.Origin, bent), list, a, b)
                 end
             end
         end
@@ -164,15 +139,19 @@ end)
 
 setreadonly(wsMT, true)
 
--- ── Hook 3: Mouse.__index — Hit + UnitRay ─────────────────────────────────────
+-- ── Hook 2: Mouse.__index ──────────────────────────────────────────────────────
+-- Intercepts Hit (CFrame) and UnitRay (Ray) only.
+-- Everything else on the mouse falls through untouched.
+
 local mouseMT    = getrawmetatable(mouse)
 setreadonly(mouseMT, false)
-local oldMouseMT = mouseMT.__index
+local oldMouseNC = mouseMT.__index
 
 mouseMT.__index = newcclosure(function(self, key)
     if enabled and locked and (key == "Hit" or key == "UnitRay") then
         local part = getAimPart(locked)
         if part then
+            -- *mouse lies to the game — reports target position, not cursor*
             local camPos = Camera.CFrame.Position
             if key == "Hit" then
                 return CFrame.new(part.Position)
@@ -181,18 +160,15 @@ mouseMT.__index = newcclosure(function(self, key)
             end
         end
     end
-    return oldMouseMT(self, key)
+    return oldMouseNC(self, key)
 end)
 
 setreadonly(mouseMT, true)
 
--- ── Heartbeat: FOV ring update + body pivot ────────────────────────────────────
--- Heartbeat fires AFTER the physics step — safe window to write HRP.CFrame.
--- Motor6D.Transform removed entirely: animator conflict → instant crash.
--- Body pivot is enough for third-person; the three hooks handle actual bullet path.
-
-RunService.Heartbeat:Connect(function(dt)
+-- ── RenderStepped: Drawing only — zero physics writes ─────────────────────────
+RunService.RenderStepped:Connect(function()
     local cursor = UIS:GetMouseLocation()
+
     for _, c in ipairs(fovCircles) do
         c.Position = cursor
         c.Visible  = enabled
@@ -213,25 +189,10 @@ RunService.Heartbeat:Connect(function(dt)
     end
 
     local part = getAimPart(target)
-    if not part then
-        lockDot.Visible = false
-        return
-    end
+    if not part then lockDot.Visible = false; return end
 
-    local targetPos = part.Position
-
-    -- Safe HRP horizontal pivot — Y-axis only, no tilt, no position change
-    local char = lp.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if root then
-        local flat   = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
-        local goalCF = CFrame.lookAt(root.Position, flat)
-        -- *the body leans toward the enemy frame by frame — smooth, not a snap*
-        root.CFrame  = root.CFrame:Lerp(goalCF, math.min(dt * turnSpeed, 1))
-    end
-
-    -- Lock dot on screen at target position
-    local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
+    -- Lock dot tracks target on screen — pure Drawing, nothing else
+    local sp, onScreen = Camera:WorldToViewportPoint(part.Position)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
         lockDot.Visible  = true
@@ -244,10 +205,7 @@ end)
 function M:SetEnabled(v)
     enabled = v
     for _, c in ipairs(fovCircles) do c.Visible = v end
-    if not v then
-        lockDot.Visible = false
-        locked = nil
-    end
+    if not v then lockDot.Visible = false; locked = nil end
 end
 
 function M:SetFOV(v)
@@ -260,11 +218,6 @@ end
 function M:SetCircleCount(v)
     circleCount = v
     buildCircles()
-end
-
-function M:SetSmoothing(v)
-    -- v: 1-100 slider → turnSpeed: 20 (snappy) down to 4 (smooth)
-    turnSpeed = 20 - ((v - 1) / 99) * 16
 end
 
 function M:SetBodyPart(v)
@@ -281,14 +234,11 @@ function M:Destroy()
     for _, c in ipairs(fovCircles) do c:Remove() end
     fovCircles = {}
     lockDot:Remove()
-    setreadonly(camMT, false)
-    camMT.__namecall = oldCamNC
-    setreadonly(camMT, true)
     setreadonly(wsMT, false)
     wsMT.__namecall = oldWsNC
     setreadonly(wsMT, true)
     setreadonly(mouseMT, false)
-    mouseMT.__index = oldMouseMT
+    mouseMT.__index = oldMouseNC
     setreadonly(mouseMT, true)
 end
 
