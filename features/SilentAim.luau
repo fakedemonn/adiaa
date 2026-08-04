@@ -1,8 +1,8 @@
 -- [Roblox exploit | client-side | Luau]
--- Silent Aim — no camera movement.
--- Body + arm pivot toward target visually.
--- Shot direction intercepted at ScreenPointToRay / ViewportPointToRay level.
--- workspace and Camera __namecall hooks catch method calls even on cached refs.
+-- Silent Aim v3 — crash-safe, third-person / shift-lock.
+-- Three hooks: Camera.__namecall, workspace.__namecall, Mouse.__index
+-- Body pivot via Heartbeat (after physics — no animator conflict)
+-- aimArm / Motor6D.Transform removed — was racing the animator and crashing
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -43,14 +43,14 @@ end
 
 buildCircles()
 
-local lockDot       = Drawing.new("Circle")
-lockDot.Visible     = false
-lockDot.Radius      = 4
-lockDot.Thickness   = 1
-lockDot.Color       = Color3.fromRGB(255, 50, 50)
-lockDot.Filled      = true
-lockDot.NumSides    = 32
-lockDot.Position    = UIS:GetMouseLocation()
+local lockDot           = Drawing.new("Circle")
+lockDot.Visible         = false
+lockDot.Radius          = 4
+lockDot.Thickness       = 1
+lockDot.Color           = Color3.fromRGB(255, 50, 50)
+lockDot.Filled          = true
+lockDot.NumSides        = 32
+lockDot.Position        = UIS:GetMouseLocation()
 
 -- ── Helpers ────────────────────────────────────────────────────────────────────
 local function isEnemy(player)
@@ -64,7 +64,8 @@ local function getAimPart(player)
     local char = player and player.Character
     if not char then return nil end
     if bodyPart == "Head" then
-        return char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+        return char:FindFirstChild("Head")
+            or char:FindFirstChild("HumanoidRootPart")
     end
     return char:FindFirstChild("UpperTorso")
         or char:FindFirstChild("Torso")
@@ -72,7 +73,7 @@ local function getAimPart(player)
 end
 
 local function getTarget()
-    local cursor  = UIS:GetMouseLocation()
+    local cursor       = UIS:GetMouseLocation()
     local best, minDist = nil, fov
     for _, player in ipairs(Players:GetPlayers()) do
         if not isEnemy(player) then continue end
@@ -89,24 +90,24 @@ local function getTarget()
     return best
 end
 
--- ── Hook 1: Camera __namecall — ScreenPointToRay + ViewportPointToRay ─────────
--- Game calls Camera:ScreenPointToRay(x, y) to convert mouse pos → world ray.
--- We return a ray pointing at the locked target instead.
--- __namecall catches method syntax calls even if the game cached Camera methods.
+-- ── Hook 1: Camera __namecall — ScreenPointToRay / ViewportPointToRay ─────────
+-- Most games compute bullet direction here, not at Raycast level.
+-- __namecall fires even when the game cached the Camera reference before our hook.
 
 local camMT    = getrawmetatable(Camera)
 setreadonly(camMT, false)
 local oldCamNC = camMT.__namecall
 
 camMT.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
+    local ok, method = pcall(getnamecallmethod)
+    if not ok then return oldCamNC(self, ...) end
 
     if enabled and locked and self == Camera
         and (method == "ScreenPointToRay" or method == "ViewportPointToRay")
     then
         local part = getAimPart(locked)
         if part then
-            -- *the camera lies about the ray — it points at the target, not the cursor*
+            -- *camera reports a ray toward the target — cursor position is ignored*
             local origin = self.CFrame.Position
             local dir    = (part.Position - origin).Unit
             return Ray.new(origin, dir)
@@ -119,15 +120,16 @@ end)
 setreadonly(camMT, true)
 
 -- ── Hook 2: workspace __namecall — Raycast + FindPartOnRay family ─────────────
--- Catches workspace:Raycast() method calls including when the game cached the ref.
--- Bends direction toward target, keeps magnitude so range checks pass.
+-- Catches cached workspace refs that bypassed a hookfunction patch.
+-- Magnitude preserved so server-side range checks don't flag the shot.
 
 local wsMT    = getrawmetatable(workspace)
 setreadonly(wsMT, false)
 local oldWsNC = wsMT.__namecall
 
 wsMT.__namecall = newcclosure(function(self, ...)
-    local method = getnamecallmethod()
+    local ok, method = pcall(getnamecallmethod)
+    if not ok then return oldWsNC(self, ...) end
 
     if enabled and locked then
         local part = getAimPart(locked)
@@ -135,7 +137,7 @@ wsMT.__namecall = newcclosure(function(self, ...)
             if method == "Raycast" then
                 local origin, direction, params = ...
                 if origin and direction then
-                    -- *direction bends silently — origin and magnitude stay honest*
+                    -- *direction bends silently; origin and magnitude stay honest*
                     local newDir = (part.Position - origin).Unit * direction.Magnitude
                     return oldWsNC(self, origin, newDir, params)
                 end
@@ -184,37 +186,12 @@ end)
 
 setreadonly(mouseMT, true)
 
--- ── Arm pitch via Motor6D.Transform ───────────────────────────────────────────
-local function aimArm(targetPos)
-    local char = lp.Character
-    if not char then return end
-    local root   = char:FindFirstChild("HumanoidRootPart")
-    local lTorso = char:FindFirstChild("LowerTorso")
-    local uTorso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso")
-    if not root or not uTorso then return end
+-- ── Heartbeat: FOV ring update + body pivot ────────────────────────────────────
+-- Heartbeat fires AFTER the physics step — safe window to write HRP.CFrame.
+-- Motor6D.Transform removed entirely: animator conflict → instant crash.
+-- Body pivot is enough for third-person; the three hooks handle actual bullet path.
 
-    local toTarget = targetPos - root.Position
-    local hDist    = math.sqrt(toTarget.X ^ 2 + toTarget.Z ^ 2)
-    local pitch    = math.atan2(toTarget.Y, hDist)
-
-    local waist = lTorso and lTorso:FindFirstChild("Waist")
-    if waist then
-        waist.Transform = CFrame.Angles(-pitch * 0.35, 0, 0)
-    end
-
-    local rShoulder = uTorso:FindFirstChild("RightShoulder")
-    if rShoulder then
-        rShoulder.Transform = CFrame.Angles(0, 0, -pitch)
-    end
-
-    local neck = uTorso:FindFirstChild("Neck")
-    if neck then
-        neck.Transform = CFrame.Angles(-pitch * 0.5, 0, 0)
-    end
-end
-
--- ── Main render loop ───────────────────────────────────────────────────────────
-RunService.RenderStepped:Connect(function(dt)
+RunService.Heartbeat:Connect(function(dt)
     local cursor = UIS:GetMouseLocation()
     for _, c in ipairs(fovCircles) do
         c.Position = cursor
@@ -230,23 +207,30 @@ RunService.RenderStepped:Connect(function(dt)
     local target = getTarget()
     locked = target
 
-    if not target then lockDot.Visible = false; return end
+    if not target then
+        lockDot.Visible = false
+        return
+    end
+
     local part = getAimPart(target)
-    if not part then lockDot.Visible = false; return end
+    if not part then
+        lockDot.Visible = false
+        return
+    end
 
     local targetPos = part.Position
 
-    -- body horizontal pivot
+    -- Safe HRP horizontal pivot — Y-axis only, no tilt, no position change
     local char = lp.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
     if root then
-        local flat = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
-        root.CFrame = root.CFrame:Lerp(
-            CFrame.lookAt(root.Position, flat),
-            math.min(dt * turnSpeed, 1)
-        )
+        local flat   = Vector3.new(targetPos.X, root.Position.Y, targetPos.Z)
+        local goalCF = CFrame.lookAt(root.Position, flat)
+        -- *the body leans toward the enemy frame by frame — smooth, not a snap*
+        root.CFrame  = root.CFrame:Lerp(goalCF, math.min(dt * turnSpeed, 1))
     end
 
+    -- Lock dot on screen at target position
     local sp, onScreen = Camera:WorldToViewportPoint(targetPos)
     if onScreen then
         lockDot.Position = Vector2.new(sp.X, sp.Y)
@@ -256,23 +240,21 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
--- Arm Motor6D step — after animator
-RunService:BindToRenderStep("SilentAimArm", Enum.RenderPriority.Last.Value + 1, function()
-    if not enabled or not locked then return end
-    local part = getAimPart(locked)
-    if part then aimArm(part.Position) end
-end)
-
 -- ── Public API ─────────────────────────────────────────────────────────────────
 function M:SetEnabled(v)
     enabled = v
     for _, c in ipairs(fovCircles) do c.Visible = v end
-    if not v then lockDot.Visible = false; locked = nil end
+    if not v then
+        lockDot.Visible = false
+        locked = nil
+    end
 end
 
 function M:SetFOV(v)
     fov = v
-    for i, c in ipairs(fovCircles) do c.Radius = fov * i / circleCount end
+    for i, c in ipairs(fovCircles) do
+        c.Radius = fov * i / circleCount
+    end
 end
 
 function M:SetCircleCount(v)
@@ -281,7 +263,8 @@ function M:SetCircleCount(v)
 end
 
 function M:SetSmoothing(v)
-    turnSpeed = 4 + ((v - 1) / 99) * 16
+    -- v: 1-100 slider → turnSpeed: 20 (snappy) down to 4 (smooth)
+    turnSpeed = 20 - ((v - 1) / 99) * 16
 end
 
 function M:SetBodyPart(v)
@@ -294,7 +277,7 @@ end
 
 function M:Destroy()
     enabled = false
-    RunService:UnbindFromRenderStep("SilentAimArm")
+    locked  = nil
     for _, c in ipairs(fovCircles) do c:Remove() end
     fovCircles = {}
     lockDot:Remove()
